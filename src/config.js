@@ -27,28 +27,42 @@ export const PROGRESSION_MILESTONES = [
 
 export const CHAPTER_MAX_TURNS = 45;
 
+// Opcional: se quiser já deixar o endereço público do Supabase pré-carregado no site,
+// cole abaixo a Project URL e a Publishable/Anon Key (são chaves públicas protegidas pelo RLS).
+export const PRELOADED_SUPABASE_URL = "https://zqxrbrkzgmtrozdatdcw.supabase.co";
+export const PRELOADED_SUPABASE_ANON_KEY = "sb_publishable_nr_xmS7O95cUleEDfsXsbw_6T926AGw";
+
 export const DEFAULT_SETTINGS = {
-  geminiKey: "",
-  geminiModel: "gemini-2.5-flash",
-  geminiEpicModel: "gemini-2.5-pro", // "" = sem cascata
-  geminiClassifierModel: "gemini-2.5-flash-lite", // "" = só a marca "epico" do turno anterior decide
+  geminiKey: "", // API Free: Classificador + Narrador Comum + fallback
+  geminiPaidKey: "", // API Paga (créditos): Narrador Épico (se vazia, usa geminiKey)
+  geminiModel: "gemini-3.5-flash-lite",
+  geminiEpicModel: "gemini-3.8-flash", // "" = sem cascata
+  geminiClassifierModel: "gemma-4-31b-it", // "" = só a marca "epico" do turno anterior decide
   monthlyBudgetUsd: 41,
   geminiRpdLimit: 250,
   geminiTpdLimit: 1000000,
   geminiRpmLimit: 15,
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: PRELOADED_SUPABASE_URL,
+  supabaseAnonKey: PRELOADED_SUPABASE_ANON_KEY,
   slotId: "white-demon-01",
   supabaseStorageLimitMb: 500,
   artStylePrompt: DEFAULT_ART_STYLE
 };
 
-// US$ por 1M tokens (tarifa paga, prompt ≤200k). Thinking conta como saída.
+// US$ por 1M tokens (referência estimada para o medidor Heimdall; thinking conta como saída).
 export const MODEL_PRICES_USD = {
-  "gemini-2.5-pro": { in: 1.25, out: 10 },
+  "gemini-4-carbon": { in: 2.0, out: 12.0 },
+  "gemini-4-argon": { in: 1.25, out: 10.0 },
+  "gemini-3.8-flash": { in: 0.3, out: 2.5 },
+  "gemini-3.5-flash": { in: 0.3, out: 2.5 },
+  "gemini-3.5-flash-lite": { in: 0.1, out: 0.4 },
+  "gemini-3.1-pro-preview": { in: 1.25, out: 10.0 },
+  "gemini-2.5-pro": { in: 1.25, out: 10.0 },
   "gemini-2.5-flash": { in: 0.3, out: 2.5 },
   "gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
   "gemini-2.0-flash": { in: 0.1, out: 0.4 },
+  "gemma-4-31b-it": { in: 0, out: 0 }, // gratuito na API Gemini
+  "gemma-4-26b-a4b-it": { in: 0, out: 0 }, // gratuito na API Gemini
   "gemma-3-27b-it": { in: 0, out: 0 } // gratuito na API Gemini
 };
 

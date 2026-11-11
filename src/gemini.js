@@ -48,8 +48,18 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?") {
   return { promptTokens, outputTokens, totalTokens: tokens };
 }
 
-// Cascata: se o modelo pedido falhar por cota/sobrecarga, cai para fallbackModel.
-export async function callGemini({ apiKey, model, fallbackModel = null, systemPrompt, userMessage, contextPayload, usage, temperature = 0.82 }) {
+// Cascata: se o modelo/chave pedido falhar por cota, indisponibilidade ou 404, cai para o fallback.
+export async function callGemini({
+  apiKey,
+  model,
+  fallbackModel = null,
+  fallbackApiKey = null,
+  systemPrompt,
+  userMessage,
+  contextPayload,
+  usage,
+  temperature = 0.82
+}) {
   if (!apiKey) {
     throw new Error("Configure sua Gemini API Key em ⚙️ Configurações antes de jogar.");
   }
@@ -70,26 +80,31 @@ ${payloadText}` : payloadText }] }],
     };
   };
 
-  const models = fallbackModel && fallbackModel !== model ? [model, fallbackModel] : [model];
+  const attempts =
+    fallbackModel && (fallbackModel !== model || (fallbackApiKey && fallbackApiKey !== apiKey))
+      ? [{ model, key: apiKey }, { model: fallbackModel, key: fallbackApiKey || apiKey }]
+      : [{ model, key: apiKey }];
   let res;
-  let usedModel;
-  for (usedModel of models) {
+  let usedModel = model;
+  for (const att of attempts) {
+    if (!att.key) continue;
+    usedModel = att.model;
     const body = buildBody(usedModel);
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(att.key)}`;
     res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (res.ok || !(res.status === 429 || res.status >= 500)) break;
+    if (res.ok || !(res.status === 429 || res.status === 404 || res.status >= 500)) break;
   }
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    if (res.status === 429) {
-      throw new Error("Cota do Gemini atingida temporariamente (429). Aguarde alguns segundos ou troque para gemini-2.5-flash-lite nas configurações.");
+  if (!res?.ok) {
+    const errText = await res?.text().catch(() => "") || "";
+    if (res?.status === 429) {
+      throw new Error("Cota do Gemini atingida temporariamente (429). Aguarde alguns segundos ou troque o modelo em ⚙️ Configurações.");
     }
-    throw new Error(`Erro Gemini (${res.status}): ${errText.slice(0, 220)}`);
+    throw new Error(`Erro Gemini (${res?.status || "?"}): ${errText.slice(0, 220)}`);
   }
 
   const data = await res.json();
@@ -101,4 +116,23 @@ ${payloadText}` : payloadText }] }],
 
   const parsed = extractJsonObject(candidateText);
   return { parsed, tokenInfo, model: usedModel, fellBack: usedModel !== model };
+}
+
+// Lista os modelos disponíveis diretamente na conta/chave do usuário.
+export async function listGeminiModels(apiKey) {
+  if (!apiKey) throw new Error("Cole ao menos uma Gemini API Key para consultar os modelos.");
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Falha ao listar modelos (${res.status}): ${errText.slice(0, 180)}`);
+  }
+  const data = await res.json();
+  return (data.models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+    .map((m) => ({
+      id: (m.name || "").replace(/^models\//, ""),
+      displayName: m.displayName || (m.name || "").replace(/^models\//, "")
+    }))
+    .filter((m) => /^(gemini|gemma)/i.test(m.id) && !/embedding|tts|image|live|robotics/i.test(m.id))
+    .sort((a, b) => b.id.localeCompare(a.id));
 }

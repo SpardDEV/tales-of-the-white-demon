@@ -13,7 +13,13 @@ const MEM_FALLBACK = { kv: new Map(), chapters: new Map(), media: new Map() };
 export function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    return { ...DEFAULT_SETTINGS, ...(raw ? JSON.parse(raw) : {}) };
+    const saved = raw ? JSON.parse(raw) : {};
+    return {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      supabaseUrl: saved.supabaseUrl || DEFAULT_SETTINGS.supabaseUrl,
+      supabaseAnonKey: saved.supabaseAnonKey || DEFAULT_SETTINGS.supabaseAnonKey
+    };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

@@ -17,8 +17,18 @@ import {
 } from "./state.js";
 import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt, buildWebtoonPrompt } from "./prompts.js";
 import { enforceTurnRules } from "./rules.js";
-import { callGemini } from "./gemini.js";
-import { isSupabaseConfigured, pullGameFromSupabase, pushChapterToSupabase, syncTurnToSupabase, signInSupabase, signOutSupabase, supabaseUserEmail } from "./supabase.js";
+import { callGemini, listGeminiModels } from "./gemini.js";
+import {
+  isSupabaseConfigured,
+  pullGameFromSupabase,
+  pullUserSettingsFromSupabase,
+  pushChapterToSupabase,
+  pushUserSettingsToSupabase,
+  syncTurnToSupabase,
+  signInSupabase,
+  signOutSupabase,
+  supabaseUserEmail
+} from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
@@ -43,6 +53,39 @@ let viewingSphereId = null;
 let activeCompSubtab = "npcs";
 let isSending = false;
 let transientMessages = [];
+
+function freeGeminiKey() {
+  return (settings.geminiKey || settings.geminiPaidKey || "").trim();
+}
+
+function epicGeminiKey() {
+  return (settings.geminiPaidKey || settings.geminiKey || "").trim();
+}
+
+function consumeMagicConnectLink() {
+  const hash = location.hash || "";
+  const search = location.search || "";
+  const rawParam =
+    (hash.startsWith("#sb=") && hash.slice(4)) ||
+    new URLSearchParams(search).get("sb");
+  if (!rawParam) return;
+  try {
+    const b64 = decodeURIComponent(rawParam).replace(/-/g, "+").replace(/_/g, "/");
+    const data = JSON.parse(atob(b64));
+    if (data?.u && data?.k) {
+      settings = {
+        ...settings,
+        supabaseUrl: String(data.u).trim(),
+        supabaseAnonKey: String(data.k).trim(),
+        ...(data.s ? { slotId: String(data.s).trim() } : {})
+      };
+      saveSettings(settings);
+      history.replaceState(null, "", location.pathname);
+    }
+  } catch {
+    // link inválido é ignorado silenciosamente
+  }
+}
 
 function setSyncBadge(text, cls = "badge-muted") {
   const b = document.getElementById("sync-badge");
@@ -123,7 +166,7 @@ const uiHandlers = {
     ];
     const { systemPrompt, userMessage } = buildWebtoonPrompt(chapter, cast, settings.artStylePrompt);
     const { parsed } = await callGemini({
-      apiKey: settings.geminiKey,
+      apiKey: freeGeminiKey(),
       model: settings.geminiModel,
       systemPrompt,
       userMessage,
@@ -339,7 +382,7 @@ async function handleChapterRotationIfNeeded() {
   try {
     const { systemPrompt, userPrompt } = buildChapterSummaryPrompt(game.activeChapter);
     const { parsed } = await callGemini({
-      apiKey: settings.geminiKey,
+      apiKey: freeGeminiKey(),
       model: settings.geminiModel,
       systemPrompt,
       userMessage: userPrompt,
@@ -391,7 +434,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       try {
         const c = buildClassifierPrompt(game, cmd.text);
         const { parsed: cls } = await callGemini({
-          apiKey: settings.geminiKey,
+          apiKey: freeGeminiKey(),
           model: settings.geminiClassifierModel,
           systemPrompt: c.systemPrompt,
           userMessage: c.userMessage,
@@ -406,9 +449,10 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       }
     }
     const { parsed, model: usedModel, fellBack } = await callGemini({
-      apiKey: settings.geminiKey,
+      apiKey: epic ? epicGeminiKey() : freeGeminiKey(),
       model: epic ? settings.geminiEpicModel : settings.geminiModel,
       fallbackModel: epic ? settings.geminiModel : null,
+      fallbackApiKey: epic ? freeGeminiKey() : null,
       systemPrompt,
       userMessage: rawInput,
       contextPayload,
@@ -533,19 +577,59 @@ async function travelToSphere(targetSphereId) {
   await sendTurn(`/world O protagonista atravessou para a esfera "${target.name}". Descreva a chegada e as condições atuais desta esfera.`);
 }
 
-function openSettingsModal() {
+function setSelectValue(id, value) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const v = value ?? "";
+  if (v && ![...sel.options].some((o) => o.value === v)) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    sel.prepend(opt);
+  }
+  sel.value = v;
+}
+
+function populateFetchedModels(models) {
+  const targets = ["cfg-gemini-model", "cfg-gemini-epic", "cfg-gemini-classifier"];
+  for (const id of targets) {
+    const sel = document.getElementById(id);
+    if (!sel) continue;
+    const prev = sel.value;
+    const allowOff = id !== "cfg-gemini-model";
+    const existing = new Set([...sel.options].map((o) => o.value));
+    for (const m of models) {
+      if (existing.has(m.id)) continue;
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.displayName && m.displayName !== m.id ? `${m.id} (${m.displayName})` : m.id;
+      sel.insertBefore(opt, allowOff && sel.lastElementChild?.value === "" ? sel.lastElementChild : null);
+      existing.add(m.id);
+    }
+    sel.value = prev;
+  }
+}
+
+function fillSettingsModalFields() {
   document.getElementById("cfg-gemini-key").value = settings.geminiKey || "";
-  document.getElementById("cfg-gemini-model").value = settings.geminiModel || "gemini-2.5-flash";
-  document.getElementById("cfg-gemini-epic").value = settings.geminiEpicModel ?? "gemini-2.5-pro";
-  document.getElementById("cfg-gemini-classifier").value = settings.geminiClassifierModel ?? "gemini-2.5-flash-lite";
+  document.getElementById("cfg-gemini-paid-key").value = settings.geminiPaidKey || "";
+  setSelectValue("cfg-gemini-model", settings.geminiModel || "gemini-3.5-flash-lite");
+  setSelectValue("cfg-gemini-epic", settings.geminiEpicModel ?? "gemini-3.8-flash");
+  setSelectValue("cfg-gemini-classifier", settings.geminiClassifierModel ?? "gemma-4-31b-it");
   document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 41;
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
   document.getElementById("cfg-sb-key").value = settings.supabaseAnonKey || "";
   document.getElementById("cfg-slot-id").value = settings.slotId || "white-demon-01";
+  const adv = document.getElementById("sb-advanced-details");
+  if (adv) adv.open = !(settings.supabaseUrl && settings.supabaseAnonKey);
   renderSbAuth();
   document.getElementById("cfg-art-style").value = settings.artStylePrompt || DEFAULT_ART_STYLE;
+}
+
+function openSettingsModal() {
+  fillSettingsModalFields();
   renderHeaderAndQuotas(game, settings);
   document.getElementById("settings-modal").classList.remove("hidden");
 }
@@ -559,15 +643,64 @@ function renderSbAuth() {
 }
 
 function bindUI() {
+  document.getElementById("btn-fetch-models").addEventListener("click", async () => {
+    const key =
+      document.getElementById("cfg-gemini-key").value.trim() ||
+      document.getElementById("cfg-gemini-paid-key").value.trim();
+    const btn = document.getElementById("btn-fetch-models");
+    const prevText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Consultando API...";
+    try {
+      const models = await listGeminiModels(key);
+      populateFetchedModels(models);
+      btn.textContent = `✓ ${models.length} modelos`;
+      setTimeout(() => { btn.textContent = prevText; }, 1800);
+    } catch (err) {
+      btn.textContent = prevText;
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("btn-copy-connect-link").addEventListener("click", async () => {
+    const u = document.getElementById("cfg-sb-url").value.trim();
+    const k = document.getElementById("cfg-sb-key").value.trim();
+    const s = document.getElementById("cfg-slot-id").value.trim() || "white-demon-01";
+    if (!u || !k) return alert("Preencha primeiro a Supabase Project URL e a Publishable/Anon Key.");
+    const payload = btoa(JSON.stringify({ u, k, s })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const link = `${location.origin}${location.pathname}#sb=${payload}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      alert("Link de conexão copiado! Abra esse link no celular/PC e só entre com seu e-mail e senha.");
+    } catch {
+      prompt("Copie o link abaixo para abrir em outro aparelho:", link);
+    }
+  });
+
   document.getElementById("btn-sb-login").addEventListener("click", async () => {
     const sb = {
       ...settings,
       supabaseUrl: document.getElementById("cfg-sb-url").value.trim(),
       supabaseAnonKey: document.getElementById("cfg-sb-key").value.trim()
     };
+    if (!sb.supabaseUrl || !sb.supabaseAnonKey) {
+      const adv = document.getElementById("sb-advanced-details");
+      if (adv) adv.open = true;
+      return alert("Preencha a Supabase Project URL e a Publishable/Anon Key abaixo antes de entrar.");
+    }
     const passEl = document.getElementById("cfg-sb-pass");
     try {
       await signInSupabase(sb, document.getElementById("cfg-sb-email").value.trim(), passEl.value);
+      settings = { ...settings, supabaseUrl: sb.supabaseUrl, supabaseAnonKey: sb.supabaseAnonKey };
+      const remoteCfg = await pullUserSettingsFromSupabase(settings).catch(() => null);
+      if (remoteCfg && typeof remoteCfg === "object") {
+        settings = { ...settings, ...remoteCfg };
+        fillSettingsModalFields();
+      }
+      saveSettings(settings);
+      setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
     } catch (err) {
       alert(err.message);
     }
@@ -728,6 +861,7 @@ function bindUI() {
     settings = {
       ...settings,
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
+      geminiPaidKey: document.getElementById("cfg-gemini-paid-key").value.trim(),
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
       geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,
@@ -740,12 +874,13 @@ function bindUI() {
       artStylePrompt: document.getElementById("cfg-art-style").value.trim() || DEFAULT_ART_STYLE
     };
     saveSettings(settings);
+    pushUserSettingsToSupabase(settings).catch((err) => console.warn("Config não enviada à nuvem:", err));
     document.getElementById("settings-modal").classList.add("hidden");
     renderHeaderAndQuotas(game, settings);
     setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
 
     if (
-      settings.geminiKey &&
+      freeGeminiKey() &&
       game.core.meta.phase === "prologue_world" &&
       game.activeChapter.turns.length === 0
     ) {
@@ -821,7 +956,7 @@ function bindUI() {
     await persistGameDataLocal(game);
     refreshAllViews();
     document.getElementById("settings-modal").classList.add("hidden");
-    if (settings.geminiKey) await sendTurn("Acordo zonzo no chão frio da masmorra. O que vejo ao meu redor?");
+    if (freeGeminiKey()) await sendTurn("Acordo zonzo no chão frio da masmorra. O que vejo ao meu redor?");
   });
   document.getElementById("btn-new-game").addEventListener("click", async () => {
     if (!confirm("Isso apagará o progresso local atual e iniciará uma nova jornada do Prólogo. Continuar?")) {
@@ -834,13 +969,14 @@ function bindUI() {
     await persistGameDataLocal(game);
     refreshAllViews();
     document.getElementById("settings-modal").classList.add("hidden");
-    if (settings.geminiKey) {
+    if (freeGeminiKey()) {
       await sendTurn("__START_PROLOGUE__");
     }
   });
 }
 
 async function init() {
+  consumeMagicConnectLink();
   await initSensory(settings.muted);
   bindUI();
   refreshAllViews();
@@ -861,7 +997,7 @@ async function init() {
     setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
 
     if (
-      settings.geminiKey &&
+      freeGeminiKey() &&
       game.core.meta.phase === "prologue_world" &&
       game.activeChapter.turns.length === 0
     ) {

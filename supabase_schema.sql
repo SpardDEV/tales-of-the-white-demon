@@ -129,3 +129,19 @@ end $$;
 -- [{ page, prompt, characters: [ids do compendium/"player"] }]
 -- ============================================================================
 alter table public.twd_chapters add column if not exists webtoon_prompts jsonb;
+
+-- ============================================================================
+-- FASE 5.8 — Configurações por usuário (carrega APIs/modelos ao logar)
+-- Rode este bloco para não precisar reconfigurar Gemini/modelos em outro aparelho.
+-- ============================================================================
+create table if not exists public.twd_user_settings (
+  owner uuid primary key default auth.uid(),
+  settings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.twd_user_settings enable row level security;
+
+drop policy if exists "twd_user_settings_owner" on public.twd_user_settings;
+create policy "twd_user_settings_owner" on public.twd_user_settings
+  for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());

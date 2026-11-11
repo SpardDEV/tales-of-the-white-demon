@@ -26,10 +26,24 @@ function storeSession(data) {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_at: data.expires_at || Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
-    email: data.user?.email || ""
+    email: data.user?.email || "",
+    userId: data.user?.id || ""
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return session;
+}
+
+function sessionUserId() {
+  const s = loadSession();
+  if (s?.userId) return s.userId;
+  try {
+    const payload = s?.access_token?.split(".")[1];
+    if (!payload) return null;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64))?.sub || null;
+  } catch {
+    return null;
+  }
 }
 
 async function authToken(settings, grant, body) {
@@ -366,4 +380,46 @@ export async function fetchChapterOnDemand(settings, chapterId, usage) {
   };
   await saveChapterLocal(chapter);
   return chapter;
+}
+
+const SYNCED_SETTING_KEYS = [
+  "geminiKey",
+  "geminiPaidKey",
+  "geminiModel",
+  "geminiEpicModel",
+  "geminiClassifierModel",
+  "monthlyBudgetUsd",
+  "geminiRpdLimit",
+  "geminiTpdLimit",
+  "slotId",
+  "artStylePrompt"
+];
+
+export async function pushUserSettingsToSupabase(settings) {
+  if (!settings.supabaseUrl || !settings.supabaseAnonKey || !loadSession()) return false;
+  const owner = sessionUserId();
+  if (!owner) return false;
+  const payload = {};
+  for (const k of SYNCED_SETTING_KEYS) {
+    if (settings[k] !== undefined) payload[k] = settings[k];
+  }
+  await upsert(
+    settings,
+    "twd_user_settings",
+    "owner",
+    [{ owner, settings: payload, updated_at: new Date().toISOString() }],
+    null
+  );
+  return true;
+}
+
+export async function pullUserSettingsFromSupabase(settings) {
+  if (!settings.supabaseUrl || !settings.supabaseAnonKey || !loadSession()) return null;
+  const rows = await sbFetch(
+    settings,
+    "twd_user_settings?select=settings&limit=1",
+    { headers: headers(settings) },
+    null
+  );
+  return rows?.[0]?.settings || null;
 }

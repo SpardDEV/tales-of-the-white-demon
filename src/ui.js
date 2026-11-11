@@ -82,6 +82,13 @@ function renderDevLogAndMiniChat({ kind, id, name, devLog = [], placeholder }) {
   `;
 }
 
+function formatNarrativeHtml(text) {
+  return esc(text)
+    .split(/\n{2,}/)
+    .map((chunk) => `<p class="msg-p">${chunk.trim().replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
 // Heimdall: custo por modelo (hoje e no mês) contra o orçamento mensal.
 function costReport(usage, settings) {
   const month = todayKey().slice(0, 7);
@@ -93,10 +100,12 @@ function costReport(usage, settings) {
   const budget = Number(settings.monthlyBudgetUsd) || 0;
   const spent = estimateCostUsd(monthModels);
   const pct = budget ? ((spent / budget) * 100).toFixed(1) : "—";
+  const keysInfo = `APIs: Free ${settings.geminiKey ? "✓" : "—"} · Paga ${settings.geminiPaidKey ? "✓" : "usa Free"}`;
   return (
     `Heimdall — custo estimado (tarifa paga; no free tier o real é US$ 0):\n` +
     `Hoje (US$ ${estimateCostUsd(usage.models || {}).toFixed(3)}):\n${lines(usage.models || {})}\n` +
     `Mês ${month} (US$ ${spent.toFixed(2)} / ${budget} · ${pct}%):\n${lines(monthModels)}\n` +
+    `${keysInfo}\n` +
     `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"} · classificador ${settings.geminiClassifierModel || "desligado"}`
   );
 }
@@ -179,14 +188,14 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
 
   if (!turns.length && !transientMessages.length) {
     html += `<div class="msg msg-ai msg-world">
-      <div class="msg-tag">❄ Bem-vindo · Dark Fantasy</div>
-      Toque em <b>⚙</b> no topo direito, cole sua <b>Gemini API Key</b> (e os dados do Supabase se quiser sincronizar) e salve para iniciar o Prólogo com a <b>Voz do Mundo</b>.
+      <div class="msg-tag">❄ Portal Inicial · Bifrost &amp; Heimdall</div>
+      <p class="msg-p">Os modelos e limites já estão pré-carregados. Toque em <b>⚙</b> no topo direito, cole sua <b>Gemini API Key</b> (ou faça login no Supabase para carregar tudo) e salve para iniciar o Prólogo com a <b>Voz do Mundo</b>.</p>
     </div>`;
   }
 
   turns.forEach((t, idx) => {
     if (t.user) {
-      html += `<div class="msg msg-user">${esc(t.user)}</div>`;
+      html += `<div class="msg msg-user"><div class="msg-body">${formatNarrativeHtml(t.user)}</div></div>`;
     }
     if (t.narrative) {
       const m = MODE_LABELS[t.mode] || MODE_LABELS.narrative;
@@ -205,7 +214,9 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
         : "";
 
       html += `<div class="msg msg-ai ${m.cls}">
-        <div class="msg-tag">${m.label}</div>${esc(t.narrative)}${sceneBlock}
+        <div class="msg-tag">${m.label}</div>
+        <div class="msg-body">${formatNarrativeHtml(t.narrative)}</div>
+        ${sceneBlock}
       </div>`;
     }
   });
@@ -213,7 +224,8 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
   for (const tm of transientMessages) {
     const m = MODE_LABELS[tm.mode] || MODE_LABELS.error;
     html += `<div class="msg msg-ai ${m.cls}">
-      <div class="msg-tag">${m.label}</div>${esc(tm.text)}
+      <div class="msg-tag">${m.label}</div>
+      <div class="msg-body">${formatNarrativeHtml(tm.text)}</div>
     </div>`;
   }
 

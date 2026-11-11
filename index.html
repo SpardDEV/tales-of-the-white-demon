@@ -193,23 +193,35 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="cfg-gemini-key">✦ Gemini API Key (salva só neste aparelho)</label>
-          <input id="cfg-gemini-key" type="password" placeholder="AIza..." />
+          <label for="cfg-gemini-key">✦ Gemini API Key — Free (Classificador &amp; Narrador Comum)</label>
+          <input id="cfg-gemini-key" type="password" placeholder="AIza... (projeto Free do AI Studio)" />
+        </div>
+        <div class="form-group">
+          <label for="cfg-gemini-paid-key">⚡ Gemini API Key — Paga / Créditos (Narrador Épico · opcional)</label>
+          <input id="cfg-gemini-paid-key" type="password" placeholder="AIza... (se vazia, o Narrador Épico usa a Free)" />
+        </div>
+        <div class="btn-row" style="margin-bottom:10px;justify-content:flex-end;">
+          <button id="btn-fetch-models" type="button" class="btn btn-ghost btn-sm">↻ Atualizar modelos da minha API</button>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label for="cfg-gemini-model">Narrador comum</label>
             <select id="cfg-gemini-model">
-              <option value="gemini-2.5-flash">gemini-2.5-flash (Recomendado)</option>
-              <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Mais cota)</option>
-              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+              <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Recomendado Free)</option>
+              <option value="gemini-3.5-flash">gemini-3.5-flash (Mais inteligente)</option>
+              <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+              <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Legado)</option>
+              <option value="gemini-2.5-flash">gemini-2.5-flash (Legado)</option>
             </select>
           </div>
           <div class="form-group">
             <label for="cfg-gemini-epic">Narrador épico (chefes/clímax)</label>
             <select id="cfg-gemini-epic">
-              <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-              <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              <option value="gemini-3.8-flash">gemini-3.8-flash (Recomendado)</option>
+              <option value="gemini-4-argon">gemini-4-argon (Chefes / Fronteira)</option>
+              <option value="gemini-4-carbon">gemini-4-carbon (Máximo raciocínio)</option>
+              <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro (Legado)</option>
               <option value="">Desligado (sem cascata)</option>
             </select>
           </div>
@@ -217,8 +229,11 @@
         <div class="form-group">
           <label for="cfg-gemini-classifier">Classificador da cascata (decide se o turno é épico)</label>
           <select id="cfg-gemini-classifier">
-            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-            <option value="gemma-3-27b-it">gemma-3-27b-it (grátis)</option>
+            <option value="gemma-4-31b-it">gemma-4-31b-it (Grátis · Recomendado)</option>
+            <option value="gemma-4-26b-a4b-it">gemma-4-26b-a4b-it (Grátis · MoE rápido)</option>
+            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
+            <option value="gemma-3-27b-it">gemma-3-27b-it (Grátis · Legado)</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Legado)</option>
             <option value="">Desligado (só a marca do turno anterior)</option>
           </select>
         </div>
@@ -240,31 +255,42 @@
         <hr class="sep" />
 
         <div class="form-group">
-          <label for="cfg-sb-url">◈ Supabase Project URL</label>
-          <input id="cfg-sb-url" type="url" placeholder="https://xxxx.supabase.co" />
-        </div>
-        <div class="form-group">
-          <label for="cfg-sb-key">Supabase Publishable / Anon Key</label>
-          <input id="cfg-sb-key" type="password" placeholder="sb_publishable_... ou eyJ..." />
-        </div>
-        <div class="form-group">
-          <label for="cfg-slot-id">Slot ID da Campanha (segredo p/ sincronizar PC ↔ Celular)</label>
-          <input id="cfg-slot-id" type="text" placeholder="white-demon-01" />
-        </div>
-        <div class="form-group">
-          <label for="cfg-sb-email">Login Supabase (usuário criado no painel → Authentication)</label>
+          <label for="cfg-sb-email">◈ Login Supabase (carrega suas APIs e save entre PC ↔ Celular)</label>
           <input id="cfg-sb-email" type="email" autocomplete="username" placeholder="voce@email.com" />
-          <input id="cfg-sb-pass" type="password" autocomplete="current-password" placeholder="senha (não fica salva)" />
+          <input id="cfg-sb-pass" type="password" autocomplete="current-password" placeholder="senha (não fica salva)" style="margin-top:6px;" />
         </div>
         <div class="btn-row">
           <span id="sb-auth-status" class="badge badge-muted">Desconectado</span>
-          <button id="btn-sb-login" class="btn btn-ghost btn-sm">Entrar</button>
-          <button id="btn-sb-logout" class="btn btn-ghost btn-sm">Sair</button>
+          <div style="display:flex;gap:6px;">
+            <button id="btn-sb-login" type="button" class="btn btn-mana btn-sm">Entrar &amp; Carregar</button>
+            <button id="btn-sb-logout" type="button" class="btn btn-ghost btn-sm">Sair</button>
+          </div>
         </div>
-        <div class="btn-row">
-          <button id="btn-sb-pull" class="btn btn-ghost btn-sm">↓ Baixar do Supabase</button>
-          <button id="btn-sb-push" class="btn btn-mana btn-sm">↑ Enviar p/ Supabase</button>
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="btn-sb-pull" type="button" class="btn btn-ghost btn-sm">↓ Baixar do Supabase</button>
+          <button id="btn-sb-push" type="button" class="btn btn-mana btn-sm">↑ Enviar p/ Supabase</button>
         </div>
+
+        <details id="sb-advanced-details" style="margin-top:10px;">
+          <summary class="muted" style="cursor:pointer;">⚙ Conexão do Projeto Supabase (URL, Key pública &amp; Slot ID)</summary>
+          <div style="margin-top:8px;">
+            <div class="form-group">
+              <label for="cfg-sb-url">◈ Supabase Project URL</label>
+              <input id="cfg-sb-url" type="url" placeholder="https://xxxx.supabase.co" />
+            </div>
+            <div class="form-group">
+              <label for="cfg-sb-key">Supabase Publishable / Anon Key</label>
+              <input id="cfg-sb-key" type="password" placeholder="sb_publishable_... ou eyJ..." />
+            </div>
+            <div class="form-group">
+              <label for="cfg-slot-id">Slot ID da Campanha (segredo p/ sincronizar PC ↔ Celular)</label>
+              <input id="cfg-slot-id" type="text" placeholder="white-demon-01" />
+            </div>
+            <div class="btn-row" style="justify-content:flex-end;">
+              <button id="btn-copy-connect-link" type="button" class="btn btn-ghost btn-sm">🔗 Copiar Link de Conexão (PC → Celular)</button>
+            </div>
+          </div>
+        </details>
 
         <hr class="sep" />
 
