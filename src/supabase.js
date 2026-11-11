@@ -2,7 +2,7 @@ import { getAllChaptersLocal, saveChapterLocal, saveMediaLocal, todayKey } from 
 import { sumModels } from "./config.js";
 
 export function isSupabaseConfigured(settings) {
-  return Boolean(settings.supabaseUrl && settings.supabaseAnonKey && settings.slotId);
+  return Boolean(settings.supabaseUrl && settings.supabaseAnonKey && settings.slotId && loadSession());
 }
 
 function baseUrl(settings) {
@@ -11,19 +11,68 @@ function baseUrl(settings) {
 
 function headers(settings, extra = {}) {
   const key = (settings.supabaseAnonKey || "").trim();
-  const base = {
-    apikey: key,
-    "Content-Type": "application/json",
-    ...extra
+  return { apikey: key, "Content-Type": "application/json", ...extra };
+}
+
+// --- Supabase Auth (Fase 5.5): RLS exige owner = auth.uid(), então toda chamada leva o JWT da sessão.
+const SESSION_KEY = "twd_sb_session";
+
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; }
+}
+
+function storeSession(data) {
+  const session = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    expires_at: data.expires_at || Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
+    email: data.user?.email || ""
   };
-  if (key && !key.startsWith("sb_")) {
-    base.Authorization = `Bearer ${key}`;
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+async function authToken(settings, grant, body) {
+  const res = await fetch(`${baseUrl(settings)}/auth/v1/token?grant_type=${grant}`, {
+    method: "POST",
+    headers: { apikey: (settings.supabaseAnonKey || "").trim(), "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Login Supabase: ${data.error_description || data.msg || res.status}`);
+  return storeSession(data);
+}
+
+export function signInSupabase(settings, email, password) {
+  return authToken(settings, "password", { email, password });
+}
+
+export function signOutSupabase() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+export function supabaseUserEmail() {
+  return loadSession()?.email || "";
+}
+
+async function accessToken(settings) {
+  let s = loadSession();
+  if (!s) throw new Error("Entre com seu e-mail e senha do Supabase nas Configurações.");
+  if (s.expires_at - 60 < Date.now() / 1000) {
+    try {
+      s = await authToken(settings, "refresh_token", { refresh_token: s.refresh_token });
+    } catch (err) {
+      signOutSupabase();
+      throw err;
+    }
   }
-  return base;
+  return s.access_token;
 }
 
 async function sbFetch(settings, path, options = {}, usage = null) {
   if (usage) usage.supabaseRequests = (usage.supabaseRequests || 0) + 1;
+  const token = await accessToken(settings);
+  options = { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } };
   const res = await fetch(`${baseUrl(settings)}/rest/v1/${path}`, options);
   if (!res.ok) {
     const msg = await res.text().catch(() => "");
@@ -144,7 +193,7 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
 
 export async function pullGameFromSupabase(settings, currentUsage, currentMediaCache = {}, lastMediaSyncAt = null) {
   if (!isSupabaseConfigured(settings)) {
-    throw new Error("Preencha URL, Publishable Key e Slot ID do Supabase nas Configurações.");
+    throw new Error("Preencha URL, Publishable Key e Slot ID do Supabase e entre com e-mail/senha nas Configurações.");
   }
   const slot = encodeURIComponent(settings.slotId.trim());
 

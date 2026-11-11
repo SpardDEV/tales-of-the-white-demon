@@ -240,6 +240,16 @@
           <label for="cfg-slot-id">Slot ID da Campanha (segredo p/ sincronizar PC ↔ Celular)</label>
           <input id="cfg-slot-id" type="text" placeholder="white-demon-01" />
         </div>
+        <div class="form-group">
+          <label for="cfg-sb-email">Login Supabase (usuário criado no painel → Authentication)</label>
+          <input id="cfg-sb-email" type="email" autocomplete="username" placeholder="voce@email.com" />
+          <input id="cfg-sb-pass" type="password" autocomplete="current-password" placeholder="senha (não fica salva)" />
+        </div>
+        <div class="btn-row">
+          <span id="sb-auth-status" class="badge badge-muted">Desconectado</span>
+          <button id="btn-sb-login" class="btn btn-ghost btn-sm">Entrar</button>
+          <button id="btn-sb-logout" class="btn btn-ghost btn-sm">Sair</button>
+        </div>
         <div class="btn-row">
           <button id="btn-sb-pull" class="btn btn-ghost btn-sm">↓ Baixar do Supabase</button>
           <button id="btn-sb-push" class="btn btn-mana btn-sm">↑ Enviar p/ Supabase</button>

@@ -100,3 +100,26 @@ alter table public.twd_media enable row level security;
 
 drop policy if exists "twd_media_all" on public.twd_media;
 create policy "twd_media_all" on public.twd_media for all using (true) with check (true);
+
+-- ============================================================================
+-- FASE 5.5 — Segurança: RLS por dono (Supabase Auth). Rode este bloco por último.
+-- 1) Painel → Authentication → Users → "Add user" (e-mail + senha, auto confirm).
+-- 2) Painel → Authentication → Sign In / Providers → desligue "Allow new users to sign up".
+-- 3) Troque o e-mail abaixo pelo seu e rode tudo. Linhas antigas passam a ser suas.
+-- 4) No app: Configurações → Login Supabase → Entrar.
+-- ============================================================================
+do $$
+declare
+  t text;
+  me uuid := (select id from auth.users where email = 'SEU_EMAIL_AQUI' limit 1);
+begin
+  if me is null then raise exception 'Crie o usuário em Authentication e troque SEU_EMAIL_AQUI'; end if;
+  foreach t in array array['twd_saves','twd_spheres','twd_compendium','twd_chapters','twd_usage','twd_media'] loop
+    execute format('alter table public.%I add column if not exists owner uuid default auth.uid()', t);
+    execute format('update public.%I set owner = %L where owner is null', t, me);
+    execute format('alter table public.%I alter column owner set not null', t);
+    execute format('drop policy if exists %I on public.%I', t || '_all', t);
+    execute format('drop policy if exists %I on public.%I', t || '_owner', t);
+    execute format('create policy %I on public.%I for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid())', t || '_owner', t);
+  end loop;
+end $$;

@@ -16,7 +16,7 @@ import {
 import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt } from "./prompts.js";
 import { enforceTurnRules } from "./rules.js";
 import { callGemini } from "./gemini.js";
-import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase } from "./supabase.js";
+import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase, signInSupabase, signOutSupabase, supabaseUserEmail } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
@@ -489,12 +489,43 @@ function openSettingsModal() {
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
   document.getElementById("cfg-sb-key").value = settings.supabaseAnonKey || "";
   document.getElementById("cfg-slot-id").value = settings.slotId || "white-demon-01";
+  renderSbAuth();
   document.getElementById("cfg-art-style").value = settings.artStylePrompt || DEFAULT_ART_STYLE;
   renderHeaderAndQuotas(game, settings);
   document.getElementById("settings-modal").classList.remove("hidden");
 }
 
+function renderSbAuth() {
+  const email = supabaseUserEmail();
+  const el = document.getElementById("sb-auth-status");
+  el.textContent = email ? `Conectado: ${email}` : "Desconectado";
+  el.className = `badge ${email ? "badge-ok" : "badge-muted"}`;
+  if (email) document.getElementById("cfg-sb-email").value = email;
+}
+
 function bindUI() {
+  document.getElementById("btn-sb-login").addEventListener("click", async () => {
+    const sb = {
+      ...settings,
+      supabaseUrl: document.getElementById("cfg-sb-url").value.trim(),
+      supabaseAnonKey: document.getElementById("cfg-sb-key").value.trim()
+    };
+    const passEl = document.getElementById("cfg-sb-pass");
+    try {
+      await signInSupabase(sb, document.getElementById("cfg-sb-email").value.trim(), passEl.value);
+    } catch (err) {
+      alert(err.message);
+    }
+    passEl.value = "";
+    renderSbAuth();
+  });
+
+  document.getElementById("btn-sb-logout").addEventListener("click", () => {
+    signOutSupabase();
+    renderSbAuth();
+    setSyncBadge("Local", "badge-muted");
+  });
+
   document.querySelectorAll(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
