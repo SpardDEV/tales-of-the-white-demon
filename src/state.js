@@ -1,8 +1,9 @@
-import { CHAPTER_MAX_TURNS, computeRankFromLevel, DEFAULT_SETTINGS } from "./config.js";
+import { CHAPTER_MAX_TURNS, computeRankFromLevel, DEFAULT_SETTINGS, PROTAGONIST_APPEARANCE_BASE } from "./config.js";
 
 const DB_NAME = "twd_infinite_rpg_v1";
 const DB_VERSION = 1;
 const SETTINGS_KEY = "twd_local_settings_v1";
+const MEM_FALLBACK = { kv: new Map(), chapters: new Map() };
 
 export function loadSettings() {
   try {
@@ -14,7 +15,11 @@ export function loadSettings() {
 }
 
 export function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // fallback silencioso se storage estiver bloqueado
+  }
 }
 
 export function todayKey() {
@@ -42,6 +47,8 @@ export function createInitialGameData() {
       player: {
         name: "Engenheiro (Sem Nome)",
         origin: "Engenheiro da Terra (Recém-reencarnado)",
+        appearance: PROTAGONIST_APPEARANCE_BASE,
+        imageWebp: null,
         level: 1,
         rank: "F",
         customRankTypology: null,
@@ -174,6 +181,10 @@ export function createInitialGameData() {
 // ============================================================================
 function openDB() {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB indisponível"));
+      return;
+    }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -186,64 +197,118 @@ function openDB() {
 }
 
 async function kvGet(key) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("kv", "readonly");
-    const req = tx.objectStore("kv").get(key);
-    req.onsuccess = () => resolve(req.result ?? null);
-    req.onerror = () => reject(req.error);
-  });
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("kv", "readonly");
+      const req = tx.objectStore("kv").get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    if (MEM_FALLBACK.kv.has(key)) return MEM_FALLBACK.kv.get(key);
+    try {
+      const raw = localStorage.getItem(`twd_kv_${key}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 async function kvSet(key, val) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("kv", "readwrite");
-    tx.objectStore("kv").put(val, key);
-    tx.oncomplete = () => resolve();
-    req.onerror = () => reject(tx.error);
-  });
+  MEM_FALLBACK.kv.set(key, val);
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("kv", "readwrite");
+      tx.objectStore("kv").put(val, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    try {
+      localStorage.setItem(`twd_kv_${key}`, JSON.stringify(val));
+    } catch {
+      // mantém em memória se localStorage também falhar
+    }
+  }
 }
 
 export async function saveChapterLocal(chapter) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("chapters", "readwrite");
-    tx.objectStore("chapters").put(chapter);
-    tx.oncomplete = () => resolve();
-    req.onerror = () => reject(tx.error);
-  });
+  MEM_FALLBACK.chapters.set(chapter.chapterId, chapter);
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("chapters", "readwrite");
+      tx.objectStore("chapters").put(chapter);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    try {
+      localStorage.setItem(`twd_ch_${chapter.chapterId}`, JSON.stringify(chapter));
+    } catch {
+      // mantém em memória
+    }
+  }
 }
 
 export async function getChapterLocal(chapterId) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("chapters", "readonly");
-    const req = tx.objectStore("chapters").get(chapterId);
-    req.onsuccess = () => resolve(req.result ?? null);
-    req.onerror = () => reject(tx.error);
-  });
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("chapters", "readonly");
+      const req = tx.objectStore("chapters").get(chapterId);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    if (MEM_FALLBACK.chapters.has(chapterId)) return MEM_FALLBACK.chapters.get(chapterId);
+    try {
+      const raw = localStorage.getItem(`twd_ch_${chapterId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function getAllChaptersLocal() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("chapters", "readonly");
-    const req = tx.objectStore("chapters").getAll();
-    req.onsuccess = () => resolve(req.result ?? []);
-    req.onerror = () => reject(req.error);
-  });
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("chapters", "readonly");
+      const req = tx.objectStore("chapters").getAll();
+      req.onsuccess = () => resolve(req.result ?? []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return Array.from(MEM_FALLBACK.chapters.values());
+  }
 }
 
 export async function clearAllLocal() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(["kv", "chapters"], "readwrite");
-    tx.objectStore("kv").clear();
-    tx.objectStore("chapters").clear();
-    tx.oncomplete = () => resolve();
-    req.onerror = () => reject(tx.error);
-  });
+  MEM_FALLBACK.kv.clear();
+  MEM_FALLBACK.chapters.clear();
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["kv", "chapters"], "readwrite");
+      tx.objectStore("kv").clear();
+      tx.objectStore("chapters").clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("twd_kv_") || k.startsWith("twd_ch_"))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export async function loadGameDataLocal() {
@@ -307,17 +372,29 @@ function clamp(val, min, max) {
 
 function upsertByKey(list, incoming, key = "id") {
   if (!incoming) return;
+  const renameTarget = incoming.renameFrom;
   const idVal = incoming[key] || incoming.name;
-  const idx = list.findIndex((item) => (item[key] || item.name) === idVal);
+  let idx = list.findIndex((item) => (item[key] || item.name) === idVal);
+  if (idx < 0 && renameTarget) {
+    idx = list.findIndex(
+      (item) =>
+        item[key] === renameTarget ||
+        (item.name && item.name.toLowerCase() === String(renameTarget).toLowerCase())
+    );
+  }
+  const cleanIncoming = { ...incoming };
+  delete cleanIncoming.renameFrom;
+
   if (idx >= 0) {
     const prev = list[idx];
-    const mergedFacts = Array.isArray(prev.knownFacts) || Array.isArray(incoming.knownFacts)
-      ? Array.from(new Set([...(prev.knownFacts || []), ...(incoming.knownFacts || [])]))
+    const mergedFacts = Array.isArray(prev.knownFacts) || Array.isArray(cleanIncoming.knownFacts)
+      ? Array.from(new Set([...(prev.knownFacts || []), ...(cleanIncoming.knownFacts || [])]))
       : undefined;
-    list[idx] = { ...prev, ...incoming };
+    list[idx] = { ...prev, ...cleanIncoming };
+    if (!cleanIncoming.imageWebp && prev.imageWebp) list[idx].imageWebp = prev.imageWebp;
     if (mergedFacts) list[idx].knownFacts = mergedFacts;
   } else {
-    list.push({ ...incoming, [key]: idVal });
+    list.push({ ...cleanIncoming, [key]: idVal });
   }
 }
 
@@ -328,6 +405,9 @@ export function applyStatePatches(game, patches) {
 
   if (typeof patches.playerName === "string" && patches.playerName.trim()) {
     p.name = patches.playerName.trim();
+  }
+  if (typeof patches.playerAppearance === "string" && patches.playerAppearance.trim()) {
+    p.appearance = patches.playerAppearance.trim();
   }
 
   if (typeof patches.hpMaxDelta === "number") p.hpMax = Math.max(10, p.hpMax + patches.hpMaxDelta);

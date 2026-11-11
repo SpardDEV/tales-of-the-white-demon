@@ -1,5 +1,11 @@
 import { PROGRESSION_MILESTONES } from "./config.js";
 
+function stripImages(obj) {
+  return JSON.parse(
+    JSON.stringify(obj, (k, v) => (k === "imageWebp" ? (v ? "[has_portrait]" : null) : v))
+  );
+}
+
 function findRelevantCompendium(game, userText) {
   const recentText = [
     userText,
@@ -15,7 +21,8 @@ function findRelevantCompendium(game, userText) {
         const tagMatch = Array.isArray(item.tags) && item.tags.some((tg) => recentText.includes(tg.toLowerCase()));
         return nameMatch || tagMatch;
       })
-      .slice(0, 8);
+      .slice(0, 8)
+      .map(stripImages);
 
   return {
     npcs: pick(game.compendium.npcs),
@@ -37,7 +44,7 @@ export function buildContextPayload(game, userText) {
   }));
 
   return {
-    core: game.core,
+    core: stripImages(game.core),
     activeSphere: sphere,
     allSpheresSummary: Object.values(game.spheres).map((s) => ({
       id: s.id,
@@ -144,21 +151,27 @@ ESCALA DE RANKS & MARCOS ORGÂNICOS (use como referência flexível e coesa com 
 ${milestonesText}
 
 REGRAS ESTRITAS DO ÁRBITRO:
-1. PROIBIDO dar habilidades aleatórias fora da linha lógica do jogador (Gelo / Nanogerenciamento Corporal / Golens de Mana Autossustentáveis [máx 7 principais] / Estase Temporal / e futuramente Magia Espacial + Mundo de Bolso + Pet de Gelo orgânico).
-2. NEGOCIAÇÃO DE HABILIDADES ("Aceitar, Forçar ou Esporro"):
+1. TOM DARK FANTASY & PROTAGONISTA: mantenha atmosfera Dark Fantasy sombria, estilizada e intensa. O protagonista tem presença e visual feroz que lembra Grimmjow de Bleach (cabelo azul-gelo espetado, olhar ciano afiado, sorriso predador, postura engenheira/combativa).
+2. PROIBIDO dar habilidades aleatórias fora da linha lógica do jogador (Gelo / Nanogerenciamento Corporal / Golens de Mana Autossustentáveis [máx 7 principais] / Estase Temporal / e futuramente Magia Espacial + Mundo de Bolso + Pet de Gelo orgânico).
+3. PERSONALIDADE EVOLUTIVA (NPCs, Pet, Companheiros e 7 Golens):
+   - Conforme a história avança, USE os fatos vividos e o JEITO como o protagonista trata cada NPC, aliado ou Pet para construir/reforçar continuamente "personality", "relationship" e "appearance" no Compêndio/Pet.
+   - PARA OS 7 GOLENS: o JOGADOR escolhe o NOME e a PERSONALIDADE-BASE de cada golem. Nunca invente nome ou personalidade aleatória para um golem sem pedir ou seguir a instrução do jogador; depois de criados, apenas reforce e evolua trejeitos coerentes com a personalidade definida por ele e com suas interações.
+   - Em "/world" (ex: renomear NPC ou alterar bio), use "renameFrom": "Nome Antigo" dentro do objeto atualizado em compendiumUpdates/golemUpdates para atualizar sem duplicar.
+   - Sempre que houver detalhes suficientes de um NPC, Monstro, Pet ou Golem, preencha o campo "appearance" (descrição física curta em inglês ou português para geração de arte).
+4. NEGOCIAÇÃO DE HABILIDADES ("Aceitar, Forçar ou Esporro"):
    - Quando o jogador tentar criar técnica/evolução acima do Rank/nível ou dos hardLimits atuais, OPINE/NEGUE com explicação técnica e proponha um MEIO-TERMO ("negotiation.status": "counter_offer").
    - Se o jogador insistir/forçar no texto ou botão: ou ceda com custo severo ("forced_with_cost") se tiver base parcial, ou dê um ESPORRO lógico ("scolded_blocked") se for absurdo para o nível atual.
-3. GOLENS (Máx 7): cada golem leva tempo e pesquisa para forjar; cada um dos 7 é autossustentável (gera própria mana). Registre em "golemUpdates".
-4. MÚLTIPLAS ESFERAS: em níveis muito altos ou via fendas/portais, pode criar "newSphere" (outros universos/planos) mantendo "canReturn: true" para poder voltar às esferas anteriores.
-5. FOG OF WAR ESTRITO:
+5. GOLENS (Máx 7): cada golem leva tempo e pesquisa para forjar; cada um dos 7 é autossustentável (gera própria mana). Registre em "golemUpdates".
+6. MÚLTIPLAS ESFERAS: em níveis muito altos ou via fendas/portais, pode criar "newSphere" (outros universos/planos) mantendo "canReturn: true" para poder voltar às esferas anteriores.
+7. FOG OF WAR ESTRITO:
    - Só adicione em "compendiumUpdates" (npcs, bestiary, concepts) fatos que o protagonista REALMENTE descobriu/presenciou nesta cena.
    - Só adicione nós em "mapUpdates" (lat: -75..75, lon: -180..180, terrain: forest|mountain|city|ruin|ice|void|water|plain|portal, asciiGlyph) quando descobrir novos locais.
-6. Nível infinito: dê "xpDelta" coerente com desafios superados. O motor calcula level-up e rank automaticamente.
+8. Nível infinito: dê "xpDelta" coerente com desafios superados. O motor calcula level-up e rank automaticamente.
 
 FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
 {
   "mode": "${commandMode}",
-  "narrative": "Texto completo em português (use formatação limpa; se for /system use estilo terminal com emojis).",
+  "narrative": "Texto completo em português (use formatação limpa; se for /system use estilo terminal com símbolos monocromáticos como ❄ ◈ ❖ ⚔ ✦).",
   "negotiation": {
     "active": false,
     "status": "none | approved | counter_offer | forced_with_cost | scolded_blocked",
@@ -168,6 +181,8 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
     "requirementsMissing": []
   },
   "statePatches": {
+    "playerName": null,
+    "playerAppearance": null,
     "hpDelta": 0,
     "manaDelta": 0,
     "staminaDelta": 0,

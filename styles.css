@@ -1,10 +1,10 @@
 :root {
-  --bg: #070b12;
-  --bg-elev: #0e1623;
-  --bg-card: #131e30;
-  --border: #1f324d;
+  --bg: #05070c;
+  --bg-elev: #0a0f18;
+  --bg-card: #101724;
+  --border: #1e2d45;
   --text: #e6f1ff;
-  --muted: #8aa0bc;
+  --muted: #8499b5;
   --ice: #67e8f9;
   --ice-strong: #22d3ee;
   --mana: #a78bfa;
@@ -27,6 +27,14 @@ html, body {
   color: var(--text);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   overflow: hidden;
+}
+
+.mono-icon {
+  font-style: normal;
+  font-variant-emoji: text;
+  color: var(--ice);
+  display: inline-block;
+  line-height: 1;
 }
 
 #app {
@@ -97,10 +105,10 @@ html, body {
 
 .icon-btn {
   background: var(--bg-card);
-  color: var(--text);
+  color: var(--ice);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 9px;
+  padding: 6px 10px;
   cursor: pointer;
   font-size: 0.95rem;
 }
@@ -111,6 +119,7 @@ html, body {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 7px;
+  cursor: pointer;
 }
 
 .quota-item {
@@ -170,8 +179,8 @@ html, body {
 
 /* CHAT */
 .banner {
-  background: #0f2034;
-  border-bottom: 1px solid #20426b;
+  background: #0d1828;
+  border-bottom: 1px solid #1f395c;
   color: var(--ice);
   padding: 6px 12px;
   font-size: 0.78rem;
@@ -199,7 +208,7 @@ html, body {
 
 .msg-user {
   align-self: flex-end;
-  background: #152b44;
+  background: #132338;
   border: 1px solid #284b75;
 }
 
@@ -209,11 +218,11 @@ html, body {
   border: 1px solid var(--border);
 }
 
-.msg-pray { border-color: #6d4aff; background: #181330; }
-.msg-world { border-color: #10b981; background: #0c221b; }
-.msg-system { border-color: #22d3ee; background: #0b1f29; font-family: var(--font-mono); font-size: 0.84rem; }
-.msg-mana { border-color: #c084fc; background: #201230; }
-.msg-error { border-color: var(--danger); background: #291216; color: #fecaca; }
+.msg-pray { border-color: #6d4aff; background: #141029; }
+.msg-world { border-color: #10b981; background: #0a1d17; }
+.msg-system { border-color: #22d3ee; background: #091821; font-family: var(--font-mono); font-size: 0.84rem; }
+.msg-mana { border-color: #c084fc; background: #1b0f29; }
+.msg-error { border-color: var(--danger); background: #261014; color: #fecaca; }
 
 .msg-tag {
   font-size: 0.7rem;
@@ -226,7 +235,7 @@ html, body {
 
 /* NEGOTIATION */
 .negotiation-box {
-  background: #1c180c;
+  background: #1a150b;
   border-top: 1px solid #6b5312;
   padding: 9px 12px;
   flex-shrink: 0;
@@ -255,8 +264,8 @@ html, body {
   color: var(--ice);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 0.74rem;
+  padding: 4px 10px;
+  font-size: 0.75rem;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -267,15 +276,20 @@ html, body {
   align-items: flex-end;
 }
 
-#chat-input {
-  flex: 1;
+#chat-input, textarea {
+  width: 100%;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
   font-family: inherit;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+#chat-input {
+  flex: 1;
   resize: none;
   max-height: 110px;
 }
@@ -284,7 +298,7 @@ html, body {
   padding: 10px 14px;
 }
 
-/* CARDS & SHEET */
+/* CARDS, PORTRAITS & SHEET */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -297,6 +311,43 @@ html, body {
   margin: 0 0 8px;
   font-size: 0.95rem;
   color: var(--ice);
+}
+
+.card-flex {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.portrait-wrap {
+  width: 90px;
+  aspect-ratio: 9 / 16;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #05070c;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 4px;
+}
+
+.portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .pre-sheet {
@@ -322,7 +373,7 @@ html, body {
   margin-bottom: 4px;
 }
 
-.muted { color: var(--muted); font-size: 0.84rem; }
+.muted { color: var(--muted); font-size: 0.82rem; }
 
 /* SUBTABS & SEARCH */
 .subtabs {
@@ -380,7 +431,7 @@ input, select {
   position: relative;
   flex: 1;
   min-height: 240px;
-  background: radial-gradient(circle at center, #0d1a2e 0%, #05080e 85%);
+  background: radial-gradient(circle at center, #0c1626 0%, #05070c 85%);
   overflow: hidden;
 }
 
@@ -429,15 +480,17 @@ input, select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   font-size: 1rem;
   cursor: pointer;
 }
+.nav-btn .mono-icon { color: var(--muted); }
 .nav-btn span { font-size: 0.68rem; }
 .nav-btn.active {
   color: var(--ice);
   background: #101c2d;
 }
+.nav-btn.active .mono-icon { color: var(--ice); }
 
 /* BUTTONS */
 .btn {
@@ -449,7 +502,7 @@ input, select {
   cursor: pointer;
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-sm { padding: 6px 10px; font-size: 0.78rem; }
+.btn-sm { padding: 5px 9px; font-size: 0.76rem; }
 .btn-ice { background: #0e7490; border-color: #22d3ee; color: #ecfeff; }
 .btn-mana { background: #5b21b6; border-color: #a78bfa; color: #f5f3ff; }
 .btn-warn { background: #92400e; border-color: #fbbf24; color: #fffbeb; }
@@ -460,7 +513,7 @@ input, select {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(3, 6, 12, 0.82);
+  background: rgba(3, 5, 10, 0.84);
   display: flex;
   align-items: center;
   justify-content: center;

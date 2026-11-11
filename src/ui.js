@@ -20,6 +20,24 @@ function textMeter(val, max, width = 10) {
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
+function renderMediaControls({ type, id, imageWebp, hasInfo = true }) {
+  const thumb = imageWebp
+    ? `<div class="portrait-wrap"><img class="portrait-img" src="${imageWebp}" alt="Arte 9:16" /></div>`
+    : `<div class="portrait-wrap"><span>9:16<br/>Sem Arte</span></div>`;
+
+  const btns = `<div class="card-actions">
+    ${hasInfo
+      ? `<button class="btn btn-ghost btn-sm btn-gen-prompt" data-type="${esc(type)}" data-id="${esc(id)}">✧ Prompt 9:16</button>`
+      : ""}
+    <label class="btn btn-ice btn-sm file-label">
+      ◈ ${imageWebp ? "Trocar 9:16" : "Anexar 9:16"}
+      <input type="file" accept="image/*" class="input-attach-img" data-type="${esc(type)}" data-id="${esc(id)}" hidden />
+    </label>
+  </div>`;
+
+  return { thumb, btns };
+}
+
 export function renderHeaderAndQuotas(game, settings) {
   const { core, usage } = game;
   const sub = document.getElementById("header-sub");
@@ -52,10 +70,10 @@ export function renderHeaderAndQuotas(game, settings) {
   const detailBox = document.getElementById("quota-detail-box");
   if (detailBox) {
     detailBox.textContent =
-      `📊 Consumo Medido (Dia ${usage.dayKey}):\n` +
+      `Consumo Medido (Dia ${usage.dayKey}):\n` +
       `• Gemini Flash: ${usage.geminiRequests} reqs hoje (${rpm}/${settings.geminiRpmLimit} RPM no último min)\n` +
       `• Tokens Gemini reais (usageMetadata): ${usage.geminiTokens.toLocaleString("pt-BR")} / ${tpdLimit.toLocaleString("pt-BR")}\n` +
-      `• Save atual estimado: ${(usage.estimatedBytes / 1024).toFixed(1)} KB (${usedMb.toFixed(3)} MB / ${sbLimitMb} MB)\n` +
+      `• Save + Imagens WebP 9:16: ${(usage.estimatedBytes / 1024).toFixed(1)} KB (${usedMb.toFixed(3)} MB / ${sbLimitMb} MB)\n` +
       `• Chamadas Supabase na sessão/dia: ${usage.supabaseRequests || 0}`;
   }
 }
@@ -65,35 +83,35 @@ export function renderPrologueBanner(game) {
   const { phase, prologueQuestionCount, prologueTargetMax, deityQuestionCount } = game.core.meta;
   if (phase === "prologue_world") {
     banner.classList.remove("hidden");
-    banner.textContent = `🌌 Prólogo — Voz do Mundo (${prologueQuestionCount}/${prologueTargetMax} perguntas abertas · Construindo leis do mundo)`;
+    banner.textContent = `✦ Prólogo — Voz do Mundo (${prologueQuestionCount}/${prologueTargetMax} perguntas abertas · Construindo leis do mundo)`;
   } else if (phase === "prologue_deity") {
     banner.classList.remove("hidden");
-    banner.textContent = `✨ Prólogo — Deusa Patrona (${deityQuestionCount} perguntas · Moldando afinidade de Gelo)`;
+    banner.textContent = `☽ Prólogo — Deusa Patrona (${deityQuestionCount} perguntas · Moldando afinidade de Gelo)`;
   } else {
     banner.classList.add("hidden");
   }
 }
 
 const MODE_LABELS = {
-  prologue_world: { label: "🌌 Voz do Mundo", cls: "msg-world" },
-  prologue_deity: { label: "✨ Deusa Patrona", cls: "msg-pray" },
-  pray: { label: "🙏 Deusa Patrona (/pray)", cls: "msg-pray" },
-  world: { label: "🌍 Arquiteto do Mundo (/world)", cls: "msg-world" },
-  system: { label: "🖥️ Tela do Sistema (/system)", cls: "msg-system" },
-  mana: { label: "💠 Consciência da Mana (/mana)", cls: "msg-mana" },
-  narrative: { label: "📖 Crônica", cls: "" },
-  error: { label: "⚠️ Aviso", cls: "msg-error" }
+  prologue_world: { label: "✦ Voz do Mundo", cls: "msg-world" },
+  prologue_deity: { label: "☽ Deusa Patrona", cls: "msg-pray" },
+  pray: { label: "☽ Deusa Patrona (/pray)", cls: "msg-pray" },
+  world: { label: "⌖ Arquiteto do Mundo (/world)", cls: "msg-world" },
+  system: { label: "❖ Tela do Sistema (/system)", cls: "msg-system" },
+  mana: { label: "◈ Consciência da Mana (/mana)", cls: "msg-mana" },
+  narrative: { label: "✧ Crônica", cls: "" },
+  error: { label: "▲ Aviso", cls: "msg-error" }
 };
 
 export function renderChatLog(game, transientMessages = []) {
   const log = document.getElementById("chat-log");
-  const turns = game.activeChapter.turns || [];
+  const turns = game?.activeChapter?.turns || [];
   let html = "";
 
   if (!turns.length && !transientMessages.length) {
     html += `<div class="msg msg-ai msg-world">
-      <div class="msg-tag">❄️ Bem-vindo</div>
-      Configure sua <b>Gemini API Key</b> em ⚙️ no topo para iniciar o Prólogo com a <b>Voz do Mundo</b> (ou envie qualquer mensagem após configurar).
+      <div class="msg-tag">❄ Bem-vindo · Dark Fantasy</div>
+      Toque em <b>⚙</b> no topo direito, cole sua <b>Gemini API Key</b> (e os dados do Supabase se quiser sincronizar) e salve para iniciar o Prólogo com a <b>Voz do Mundo</b>.
     </div>`;
   }
 
@@ -129,7 +147,7 @@ export function renderNegotiationBox(game) {
   }
   box.classList.remove("hidden");
   document.getElementById("negotiation-title").textContent =
-    `⚖️ ${neg.title || "Negociação de Evolução / Limite"}`;
+    `⚖ ${neg.title || "Negociação de Evolução / Limite"}`;
   const missing = neg.requirementsMissing?.length
     ? `\nRequisitos pendentes: ${neg.requirementsMissing.join(", ")}`
     : "";
@@ -137,7 +155,7 @@ export function renderNegotiationBox(game) {
     `${neg.proposalSummary || "Proposta fora do patamar atual."}${missing}`;
 }
 
-export function renderSheet(game) {
+export function renderSheet(game, handlers = {}) {
   const { player, patronDeity, manaConsciousness, skills, golems, spatialPocket, pet, inventory } =
     game.core;
   const el = document.getElementById("sheet-content");
@@ -147,30 +165,37 @@ export function renderSheet(game) {
     .join("\n");
 
   const statusText =
-    `❄️ PERSONAGEM: ${player.name}\n` +
-    `🧬 Origem: ${player.origin}\n` +
-    `🏅 Rank: ${player.rank}  |  Nível: ${player.level}\n` +
-    `✨ XP: ${player.xp} / ${player.xpToNext} [${textMeter(player.xp, player.xpToNext)}]\n` +
-    `❤️ HP:   ${player.hp}/${player.hpMax} [${textMeter(player.hp, player.hpMax)}]\n` +
-    `💧 Mana: ${player.mana}/${player.manaMax} [${textMeter(player.mana, player.manaMax)}]\n` +
+    `❄ NOME: ${player.name}\n` +
+    `✦ Origem: ${player.origin}\n` +
+    `◈ Rank: ${player.rank}  |  Nível: ${player.level}\n` +
+    `✧ XP: ${player.xp} / ${player.xpToNext} [${textMeter(player.xp, player.xpToNext)}]\n` +
+    `♥ HP:   ${player.hp}/${player.hpMax} [${textMeter(player.hp, player.hpMax)}]\n` +
+    `◈ Mana: ${player.mana}/${player.manaMax} [${textMeter(player.mana, player.manaMax)}]\n` +
     `⚡ Est.: ${player.stamina}/${player.staminaMax} [${textMeter(player.stamina, player.staminaMax)}]\n\n` +
-    `📐 ATRIBUTOS:\n${attrLines}\n` +
-    (player.titles.length ? `\n🏷️ Títulos: ${player.titles.join(" · ")}` : "") +
+    `⌖ ATRIBUTOS:\n${attrLines}\n` +
+    (player.titles.length ? `\n✦ Títulos: ${player.titles.join(" · ")}` : "") +
     (player.bodyModifications.length
-      ? `\n🧊 Modificações Corporais: ${player.bodyModifications.join(", ")}`
+      ? `\n❄ Modificações Corporais: ${player.bodyModifications.join(", ")}`
       : "");
+
+  const playerMedia = renderMediaControls({
+    type: "player",
+    id: "player",
+    imageWebp: player.imageWebp,
+    hasInfo: true
+  });
 
   const manaCard = manaConsciousness.unlocked
     ? `<div class="card">
-        <h3>💠 Consciência da Mana: ${esc(manaConsciousness.name || "Eco Criogênico")}</h3>
+        <h3>◈ Consciência da Mana: ${esc(manaConsciousness.name || "Eco Criogênico")}</h3>
         <div class="muted">Despertou no Lv. ${manaConsciousness.awakenedAtLevel} · Sincronia: ${manaConsciousness.sync}%</div>
         <p style="margin:6px 0 4px;font-size:0.85rem;">${esc(manaConsciousness.personality)}</p>
         ${manaConsciousness.lastRemarks?.length
-          ? `<pre class="pre-sheet">💬 "${esc(manaConsciousness.lastRemarks[0])}"</pre>`
+          ? `<pre class="pre-sheet">“${esc(manaConsciousness.lastRemarks[0])}”</pre>`
           : ""}
       </div>`
     : `<div class="card">
-        <h3>💠 Consciência da Mana (Dormente)</h3>
+        <h3>◈ Consciência da Mana (Dormente)</h3>
         <div class="muted">Ainda não nasceu por ação e reação (~Lv 45-50). O /system permanece mudo e objetivo.</div>
       </div>`;
 
@@ -178,49 +203,95 @@ export function renderSheet(game) {
     ? skills
         .map(
           (s) => `<div class="card skill-card">
-            <h3>❄️ ${esc(s.name)} <span class="tag-pill">Tier ${esc(s.tier || "?")} · Lv.${s.level || 1}</span></h3>
+            <h3>❄ ${esc(s.name)} <span class="tag-pill">Tier ${esc(s.tier || "?")} · Lv.${s.level || 1}</span></h3>
             <div style="font-size:0.83rem;margin-bottom:4px;"><b>Escopo Atual:</b> ${esc(s.currentScope || "—")}</div>
             <div style="font-size:0.82rem;color:#fbbf24;margin-bottom:4px;"><b>Trava Lógica:</b> ${esc(s.hardLimits || "—")}</div>
             ${Array.isArray(s.evolutionNorth) && s.evolutionNorth.length
               ? `<div style="font-size:0.8rem;" class="muted"><b>Norte Evolutivo:</b> ${s.evolutionNorth.map(esc).join(" → ")}</div>`
               : ""}
             ${Array.isArray(s.forcedScars) && s.forcedScars.length
-              ? `<div style="font-size:0.8rem;color:#f87171;margin-top:4px;">⚠️ Sobrecargas: ${s.forcedScars.map(esc).join(" | ")}</div>`
+              ? `<div style="font-size:0.8rem;color:#f87171;margin-top:4px;">▲ Sobrecargas: ${s.forcedScars.map(esc).join(" | ")}</div>`
               : ""}
           </div>`
         )
         .join("")
     : `<div class="card"><div class="muted">Nenhuma habilidade selada ainda. Complete o Prólogo com a Deusa Patrona.</div></div>`;
 
-  const golemSlots = [];
+  const golemCards = [];
   for (let i = 0; i < golems.maxSlots; i++) {
     const g = golems.items[i];
-    golemSlots.push(
-      g
-        ? `Slot ${i + 1}: 🗿 ${g.name} [Rank ${g.rank || "?"}] · Mana Própria: ${g.manaPool || "Autossustentável"} · ${g.status || "Ativo"}`
-        : `Slot ${i + 1}: [ Vazio — Forja de longo prazo ]`
-    );
+    if (g) {
+      const gm = renderMediaControls({
+        type: "golem",
+        id: g.id || g.name,
+        imageWebp: g.imageWebp,
+        hasInfo: true
+      });
+      golemCards.push(`
+        <div class="card">
+          <h3>❖ Slot ${i + 1}: ${esc(g.name)} <span class="tag-pill">Rank ${esc(g.rank || "?")}</span></h3>
+          <div class="card-flex">
+            ${gm.thumb}
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.83rem;"><b>Personalidade:</b> ${esc(g.personality || "Definida por você")}</div>
+              <div class="muted" style="margin-top:3px;">Mana Própria: ${esc(g.manaPool || "Autossustentável")} · ${esc(g.status || "Ativo")}</div>
+              ${g.appearance ? `<div class="muted" style="margin-top:3px;">Visual: ${esc(g.appearance)}</div>` : ""}
+              ${gm.btns}
+            </div>
+          </div>
+        </div>
+      `);
+    } else {
+      golemCards.push(`<div class="card"><div class="muted">❖ Slot ${i + 1}: [ Vazio — Nome e personalidade serão definidos por você ao forjar ]</div></div>`);
+    }
   }
 
   const pocketHtml = spatialPocket.unlocked
-    ? `<pre class="pre-sheet">🌌 ${esc(spatialPocket.name)}\n💧 Mana Estocada: ${spatialPocket.storedMana} / ${spatialPocket.storedManaCap}\n🗿 Golens Guardados: ${(spatialPocket.golemsInside || []).join(", ") || "Nenhum"}\n🗡️ Arsenal: ${(spatialPocket.storedItems || []).join(", ") || "Vazio"}</pre>`
+    ? `<pre class="pre-sheet">✦ ${esc(spatialPocket.name)}\n◈ Mana Estocada: ${spatialPocket.storedMana} / ${spatialPocket.storedManaCap}\n❖ Golens Guardados: ${(spatialPocket.golemsInside || []).join(", ") || "Nenhum"}\n⚔ Arsenal: ${(spatialPocket.storedItems || []).join(", ") || "Vazio"}</pre>`
     : `<div class="muted">Bloqueado — reservado para o desbloqueio orgânico de Magia Espacial (~Lv 400).</div>`;
 
-  const petHtml = pet.unlocked
-    ? `<pre class="pre-sheet">🐾 ${esc(pet.name || "Companheiro")} (${esc(pet.species || "Criatura de Gelo")})\n🏅 Rank: ${esc(pet.rank || "?")} · Vínculo: ${pet.bond || 0}%\n❄️ Habilidades: ${(pet.abilities || []).join(", ") || "—"}\n📝 ${esc(pet.notes || "")}</pre>`
-    : `<div class="muted">Nenhum companheiro criogênico vinculado ainda.</div>`;
+  let petHtml = `<div class="muted">Nenhum companheiro criogênico vinculado ainda.</div>`;
+  if (pet.unlocked) {
+    const pm = renderMediaControls({
+      type: "pet",
+      id: "pet",
+      imageWebp: pet.imageWebp,
+      hasInfo: true
+    });
+    petHtml = `
+      <div class="card-flex">
+        ${pm.thumb}
+        <div style="flex:1;min-width:0;">
+          <pre class="pre-sheet">⚔ ${esc(pet.name || "Companheiro")} (${esc(pet.species || "Criatura de Gelo")})\n◈ Rank: ${esc(pet.rank || "?")} · Vínculo: ${pet.bond || 0}%\n✦ Personalidade: ${esc(pet.personality || "Em formação")}\n❄ Habilidades: ${(pet.abilities || []).join(", ") || "—"}\n${esc(pet.notes || "")}</pre>
+          ${pm.btns}
+        </div>
+      </div>
+    `;
+  }
 
   el.innerHTML = `
-    <div class="card"><h3>📊 Tela do Sistema (/system)</h3><pre class="pre-sheet">${esc(statusText)}</pre></div>
+    <div class="card">
+      <h3>❖ Tela do Sistema (/system)</h3>
+      <div class="card-flex">
+        ${playerMedia.thumb}
+        <div style="flex:1;min-width:0;">
+          <pre class="pre-sheet">${esc(statusText)}</pre>
+          ${playerMedia.btns}
+        </div>
+      </div>
+    </div>
     ${manaCard}
-    <div class="card"><h3>✨ Deusa Patrona</h3><pre class="pre-sheet">🙏 ${esc(patronDeity.name)} · Domínio: ${esc(patronDeity.domain)}\n🤝 Vínculo: ${patronDeity.bond} · Postura: ${esc(patronDeity.disposition)}</pre></div>
-    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❄️ Habilidades</h3>
+    <div class="card"><h3>☽ Deusa Patrona</h3><pre class="pre-sheet">${esc(patronDeity.name)} · Domínio: ${esc(patronDeity.domain)}\nVínculo: ${patronDeity.bond} · Postura: ${esc(patronDeity.disposition)}</pre></div>
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❄ Habilidades</h3>
     ${skillsHtml}
-    <div class="card"><h3>🗿 7 Golens Autossustentáveis (${golems.items.length}/7)</h3><pre class="pre-sheet">${esc(golemSlots.join("\n"))}</pre></div>
-    <div class="card"><h3>🌌 Mundo de Bolso (Magia Espacial)</h3>${pocketHtml}</div>
-    <div class="card"><h3>🐾 Pet de Gelo</h3>${petHtml}</div>
-    <div class="card"><h3>🎒 Inventário</h3><pre class="pre-sheet">${inventory.length ? esc(inventory.map((i) => `• ${i}`).join("\n")) : "Mochila vazia."}</pre></div>
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❖ 7 Golens Autossustentáveis (${golems.items.length}/7)</h3>
+    ${golemCards.join("")}
+    <div class="card"><h3>✦ Mundo de Bolso (Magia Espacial)</h3>${pocketHtml}</div>
+    <div class="card"><h3>⚔ Pet de Gelo</h3>${petHtml}</div>
+    <div class="card"><h3>☰ Inventário</h3><pre class="pre-sheet">${inventory.length ? esc(inventory.map((i) => `• ${i}`).join("\n")) : "Mochila vazia."}</pre></div>
   `;
+
+  bindMediaHandlers(el, handlers);
 }
 
 export function renderQuests(game) {
@@ -231,23 +302,23 @@ export function renderQuests(game) {
       ? arr
           .map(
             (q) => `<div class="card">
-              <h3>${q.status === "completed" ? "✅" : "📜"} ${esc(q.title)}</h3>
+              <h3>${q.status === "completed" ? "✓" : "⚔"} ${esc(q.title)}</h3>
               <div style="font-size:0.84rem;">${esc(q.description || "")}</div>
-              ${q.reward ? `<div class="muted" style="margin-top:4px;">🎁 ${esc(q.reward)}</div>` : ""}
+              ${q.reward ? `<div class="muted" style="margin-top:4px;">✦ ${esc(q.reward)}</div>` : ""}
             </div>`
           )
           .join("")
       : `<div class="card"><div class="muted">${emptyMsg}</div></div>`;
 
   el.innerHTML = `
-    <h3 style="font-size:0.9rem;color:var(--ice);margin:0 0 8px;">🔥 Quests Ativas</h3>
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:0 0 8px;">⚔ Quests Ativas</h3>
     ${renderList(active, "Nenhuma quest ativa no momento.")}
-    <h3 style="font-size:0.9rem;color:var(--muted);margin:14px 0 8px;">🏁 Concluídas</h3>
+    <h3 style="font-size:0.9rem;color:var(--muted);margin:14px 0 8px;">✓ Concluídas</h3>
     ${renderList(completed, "Nenhuma quest concluída ainda.")}
   `;
 }
 
-export async function renderCompendium(game, settings, activeSubtab, query = "") {
+export async function renderCompendium(game, settings, activeSubtab, query = "", handlers = {}) {
   const el = document.getElementById("compendium-content");
   const q = query.trim().toLowerCase();
 
@@ -257,10 +328,10 @@ export async function renderCompendium(game, settings, activeSubtab, query = "")
       ? list
           .map(
             (c) => `<div class="card">
-              <h3>📚 Cap. ${c.chapterNumber}: ${esc(c.title || "Sem título")} ${c.isClosed ? "🔒" : "🟢"}</h3>
+              <h3>☰ Cap. ${c.chapterNumber}: ${esc(c.title || "Sem título")} ${c.isClosed ? "[Fechado]" : "[Ativo]"}</h3>
               <div class="muted">Turnos: ${c.turnCount}</div>
               <p style="font-size:0.84rem;margin:6px 0;">${esc(c.summary || "Capítulo em andamento...")}</p>
-              <button class="btn btn-ghost btn-sm btn-read-chapter" data-ch="${esc(c.chapterId)}">📖 Ler Turnos</button>
+              <button class="btn btn-ghost btn-sm btn-read-chapter" data-ch="${esc(c.chapterId)}">✧ Ler Turnos</button>
               <div id="ch-preview-${esc(c.chapterId)}" style="margin-top:8px;"></div>
             </div>`
           )
@@ -310,25 +381,68 @@ export async function renderCompendium(game, settings, activeSubtab, query = "")
       const facts = Array.isArray(item.knownFacts)
         ? item.knownFacts.map((f) => `• ${f}`).join("\n")
         : item.description || "";
+      const hasEnoughInfo = Boolean(
+        item.appearance || item.personality || (Array.isArray(item.knownFacts) && item.knownFacts.length > 0)
+      );
+      const media = renderMediaControls({
+        type: activeSubtab,
+        id: item.id || item.name,
+        imageWebp: item.imageWebp,
+        hasInfo: hasEnoughInfo
+      });
+
       return `<div class="card">
         <h3>${esc(item.name)} ${item.rank ? `<span class="tag-pill">${esc(item.rank)}</span>` : ""}</h3>
-        ${item.role || item.species || item.category
-          ? `<div class="muted" style="margin-bottom:5px;">${esc(item.role || item.species || item.category)}</div>`
-          : ""}
-        <pre class="pre-sheet">${esc(facts)}</pre>
+        <div class="card-flex">
+          ${media.thumb}
+          <div style="flex:1;min-width:0;">
+            ${item.role || item.species || item.category
+              ? `<div class="muted" style="margin-bottom:4px;">${esc(item.role || item.species || item.category)}</div>`
+              : ""}
+            ${item.personality
+              ? `<div style="font-size:0.81rem;color:var(--mana);margin-bottom:4px;"><b>Personalidade:</b> ${esc(item.personality)}</div>`
+              : ""}
+            ${item.relationship
+              ? `<div style="font-size:0.81rem;margin-bottom:4px;"><b>Relação:</b> ${esc(item.relationship)}</div>`
+              : ""}
+            <pre class="pre-sheet">${esc(facts)}</pre>
+            ${media.btns}
+          </div>
+        </div>
       </div>`;
     })
     .join("");
+
+  bindMediaHandlers(el, handlers);
 }
 
-export function renderSphereSelector(game, viewingSphereId, onTravel) {
+function bindMediaHandlers(container, handlers) {
+  if (!handlers) return;
+  container.querySelectorAll(".btn-gen-prompt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (handlers.onGeneratePrompt) {
+        handlers.onGeneratePrompt(btn.dataset.type, btn.dataset.id);
+      }
+    });
+  });
+  container.querySelectorAll(".input-attach-img").forEach((inp) => {
+    inp.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file && handlers.onUploadImage) {
+        handlers.onUploadImage(inp.dataset.type, inp.dataset.id, file);
+      }
+    });
+  });
+}
+
+export function renderSphereSelector(game, viewingSphereId) {
   const select = document.getElementById("sphere-select");
   const spheres = Object.values(game.spheres);
   select.innerHTML = spheres
     .map(
       (s) =>
         `<option value="${esc(s.id)}" ${s.id === viewingSphereId ? "selected" : ""}>` +
-        `🌐 ${esc(s.name)}${s.id === game.core.meta.activeSphereId ? " (Atual)" : ""}` +
+        `⌖ ${esc(s.name)}${s.id === game.core.meta.activeSphereId ? " (Atual)" : ""}` +
         `</option>`
     )
     .join("");
@@ -340,7 +454,7 @@ export function renderMapNodeCard(game, viewingSphereId, node, onTravelSphere) {
   const isOtherSphere = viewingSphereId !== game.core.meta.activeSphereId;
 
   const travelBtn = isOtherSphere && sphere?.canReturn
-    ? `<button id="btn-travel-sphere" class="btn btn-mana btn-sm" style="margin-top:8px;">🌀 Viajar / Retornar para esta Esfera</button>`
+    ? `<button id="btn-travel-sphere" class="btn btn-mana btn-sm" style="margin-top:8px;">✦ Viajar / Retornar para esta Esfera</button>`
     : "";
 
   if (!node) {

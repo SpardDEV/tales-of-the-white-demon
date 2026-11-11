@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0d1624" />
+  <meta name="theme-color" content="#05070c" />
   <title>Tales of the White Demon</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="stylesheet" href="./styles.css" />
@@ -14,7 +14,7 @@
     <header class="topbar">
       <div class="topbar-row">
         <div class="brand">
-          <span class="brand-icon">❄️</span>
+          <span class="brand-icon mono-icon">❄</span>
           <div>
             <div class="brand-title">Tales of the White Demon</div>
             <div id="header-sub" class="brand-sub">Rank F · Lv. 1 · Cap. 1</div>
@@ -22,7 +22,7 @@
         </div>
         <div class="topbar-actions">
           <span id="sync-badge" class="badge badge-muted" title="Status de sincronização">Local</span>
-          <button id="btn-open-settings" class="icon-btn" title="Configurações & API">⚙️</button>
+          <button id="btn-open-settings" class="icon-btn mono-icon" title="Configurações & API">⚙</button>
         </div>
       </div>
 
@@ -30,7 +30,7 @@
       <div class="quota-strip" id="quota-strip" title="Toque para detalhes de consumo">
         <div class="quota-item">
           <div class="quota-label">
-            <span>🤖 Gemini (Dia)</span>
+            <span><i class="mono-icon">✦</i> Gemini (Dia)</span>
             <span id="gemini-quota-text">0 / 250 req · 0 tok</span>
           </div>
           <div class="progress-track">
@@ -39,7 +39,7 @@
         </div>
         <div class="quota-item">
           <div class="quota-label">
-            <span>🗄️ Supabase</span>
+            <span><i class="mono-icon">◈</i> Supabase</span>
             <span id="supabase-quota-text">0.00 / 500 MB</span>
           </div>
           <div class="progress-track">
@@ -58,22 +58,22 @@
 
         <!-- NEGOTIATION / STUBBORNNESS BAR -->
         <div id="negotiation-box" class="negotiation-box hidden">
-          <div class="negotiation-title" id="negotiation-title">⚖️ Negociação do Sistema</div>
+          <div class="negotiation-title" id="negotiation-title">⚖ Negociação do Sistema</div>
           <div class="negotiation-desc" id="negotiation-desc"></div>
           <div class="negotiation-actions">
-            <button id="btn-neg-accept" class="btn btn-ice btn-sm">✅ Aceitar Meio-Termo</button>
+            <button id="btn-neg-accept" class="btn btn-ice btn-sm">✓ Aceitar Meio-Termo</button>
             <button id="btn-neg-force" class="btn btn-warn btn-sm">⚡ Forçar Mesmo Assim</button>
-            <button id="btn-neg-cancel" class="btn btn-ghost btn-sm">❌ Recuar</button>
+            <button id="btn-neg-cancel" class="btn btn-ghost btn-sm">✕ Recuar</button>
           </div>
         </div>
 
         <!-- COMMAND CHIPS + INPUT -->
         <div class="composer">
           <div class="cmd-chips">
-            <button class="chip" data-cmd="/pray " title="Falar com a Deusa Patrona">🙏 /pray</button>
-            <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo">🌍 /world</button>
-            <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar">🖥️ /system</button>
-            <button class="chip" data-cmd="/mana " title="Falar direto com a Consciência da Mana">💠 /mana</button>
+            <button class="chip" data-cmd="/pray " title="Falar com a Deusa Patrona"><i class="mono-icon">☽</i> /pray</button>
+            <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo"><i class="mono-icon">⌖</i> /world</button>
+            <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar"><i class="mono-icon">❖</i> /system</button>
+            <button class="chip" data-cmd="/mana " title="Falar direto com a Consciência da Mana"><i class="mono-icon">◈</i> /mana</button>
           </div>
           <form id="chat-form" class="chat-form">
             <textarea
@@ -99,10 +99,10 @@
       <!-- TAB: COMPÊNDIO -->
       <section id="tab-compendium" class="panel">
         <div class="subtabs">
-          <button class="subtab active" data-comp="npcs">👤 NPCs</button>
-          <button class="subtab" data-comp="bestiary">👹 Bestiário</button>
-          <button class="subtab" data-comp="concepts">🌌 Conceitos</button>
-          <button class="subtab" data-comp="chapters">📚 Capítulos</button>
+          <button class="subtab active" data-comp="npcs">☽ NPCs</button>
+          <button class="subtab" data-comp="bestiary">⚔ Bestiário</button>
+          <button class="subtab" data-comp="concepts">✦ Conceitos</button>
+          <button class="subtab" data-comp="chapters">☰ Capítulos</button>
         </div>
         <div class="search-row">
           <input id="compendium-search" type="search" placeholder="Filtrar descobertas..." />
@@ -115,14 +115,14 @@
         <div class="map-toolbar">
           <select id="sphere-select" class="select-input"></select>
           <div class="map-zoom-btns">
-            <button id="btn-zoom-in" class="icon-btn" title="Aproximar">➕</button>
-            <button id="btn-zoom-out" class="icon-btn" title="Afastar">➖</button>
+            <button id="btn-zoom-in" class="icon-btn" title="Aproximar">+</button>
+            <button id="btn-zoom-out" class="icon-btn" title="Afastar">−</button>
             <button id="btn-globe-reset" class="icon-btn" title="Centralizar">⟲</button>
           </div>
         </div>
         <div class="globe-wrap">
           <canvas id="globe-canvas"></canvas>
-          <div class="globe-hint">Arraste para girar a esfera · Pinça/➕➖ para zoom · Toque num nó</div>
+          <div class="globe-hint">Arraste para girar a esfera · Pinça/+− para zoom · Toque num nó</div>
         </div>
         <div id="map-node-card" class="node-card">
           <div class="muted">Toque em um ponto descoberto na esfera para ver detalhes.</div>
@@ -130,26 +130,43 @@
       </section>
     </main>
 
-    <!-- BOTTOM NAVIGATION -->
+    <!-- BOTTOM NAVIGATION (MONOCHROME DARK FANTASY) -->
     <nav class="bottom-nav">
-      <button class="nav-btn active" data-tab="chat">💬<span>Chat</span></button>
-      <button class="nav-btn" data-tab="sheet">📊<span>Ficha</span></button>
-      <button class="nav-btn" data-tab="quests">📜<span>Quests</span></button>
-      <button class="nav-btn" data-tab="compendium">📖<span>Compêndio</span></button>
-      <button class="nav-btn" data-tab="map">🌐<span>Mapa</span></button>
+      <button class="nav-btn active" data-tab="chat"><i class="mono-icon">✧</i><span>Chat</span></button>
+      <button class="nav-btn" data-tab="sheet"><i class="mono-icon">❖</i><span>Ficha</span></button>
+      <button class="nav-btn" data-tab="quests"><i class="mono-icon">⚔</i><span>Quests</span></button>
+      <button class="nav-btn" data-tab="compendium"><i class="mono-icon">☰</i><span>Compêndio</span></button>
+      <button class="nav-btn" data-tab="map"><i class="mono-icon">⌖</i><span>Mapa</span></button>
     </nav>
+  </div>
+
+  <!-- PROMPT 9:16 MODAL -->
+  <div id="prompt-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>✧ Prompt 9:16 (ChatGPT)</h2>
+        <button id="btn-close-prompt" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:8px;">Copie e cole no ChatGPT para gerar a arte Dark Fantasy vertical (9:16), depois use <b>Anexar 9:16</b> no card.</div>
+        <textarea id="prompt-modal-text" rows="8" readonly></textarea>
+        <div class="btn-row" style="margin-top:10px;justify-content:flex-end;">
+          <button id="btn-copy-prompt" class="btn btn-ice btn-sm">◈ Copiar Prompt</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- SETTINGS MODAL -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>⚙️ Configurações, APIs & Save</h2>
-        <button id="btn-close-settings" class="icon-btn">✖</button>
+        <h2>⚙ Configurações, APIs & Arte</h2>
+        <button id="btn-close-settings" class="icon-btn">✕</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="cfg-gemini-key">🔑 Gemini API Key (salva só neste aparelho)</label>
+          <label for="cfg-gemini-key">✦ Gemini API Key (salva só neste aparelho)</label>
           <input id="cfg-gemini-key" type="password" placeholder="AIza..." />
         </div>
         <div class="form-row">
@@ -163,7 +180,7 @@
           </div>
           <div class="form-group">
             <label for="cfg-gemini-rpd">Limite diário (RPD)</label>
-            <input id="cfg-gemini-rpd" type="number" min="10" max="10000" value="250" />
+            <input id="cfg-gemini-rpd" type="number" min="10" max="50000" value="250" />
           </div>
         </div>
         <div class="form-group">
@@ -174,7 +191,7 @@
         <hr class="sep" />
 
         <div class="form-group">
-          <label for="cfg-sb-url">🗄️ Supabase Project URL</label>
+          <label for="cfg-sb-url">◈ Supabase Project URL</label>
           <input id="cfg-sb-url" type="url" placeholder="https://xxxx.supabase.co" />
         </div>
         <div class="form-group">
@@ -186,24 +203,29 @@
           <input id="cfg-slot-id" type="text" placeholder="white-demon-01" />
         </div>
         <div class="btn-row">
-          <button id="btn-sb-pull" class="btn btn-ghost btn-sm">⬇️ Baixar do Supabase</button>
-          <button id="btn-sb-push" class="btn btn-mana btn-sm">⬆️ Enviar p/ Supabase</button>
+          <button id="btn-sb-pull" class="btn btn-ghost btn-sm">↓ Baixar do Supabase</button>
+          <button id="btn-sb-push" class="btn btn-mana btn-sm">↑ Enviar p/ Supabase</button>
         </div>
 
         <hr class="sep" />
 
+        <div class="form-group">
+          <label for="cfg-art-style">✧ Estilo de Arte Padrão (Prompts 9:16 ChatGPT)</label>
+          <textarea id="cfg-art-style" rows="3"></textarea>
+        </div>
+
         <div class="quota-detail-box" id="quota-detail-box"></div>
 
         <div class="btn-row">
-          <button id="btn-export-save" class="btn btn-ghost btn-sm">💾 Exportar Save (.json)</button>
+          <button id="btn-export-save" class="btn btn-ghost btn-sm">◈ Exportar Save (.json)</button>
           <label class="btn btn-ghost btn-sm file-label">
-            📂 Importar JSON
+            ☰ Importar JSON
             <input id="input-import-save" type="file" accept=".json,application/json" hidden />
           </label>
         </div>
 
         <div class="btn-row" style="margin-top: 10px;">
-          <button id="btn-new-game" class="btn btn-danger btn-sm">🔄 Reiniciar Jornada (Novo Prólogo)</button>
+          <button id="btn-new-game" class="btn btn-danger btn-sm">⟲ Reiniciar Jornada (Novo Prólogo)</button>
           <button id="btn-save-settings" class="btn btn-ice">Salvar Configurações</button>
         </div>
       </div>

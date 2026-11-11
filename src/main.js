@@ -13,6 +13,8 @@ import { buildChapterSummaryPrompt, buildContextPayload, buildSystemPrompt } fro
 import { callGemini } from "./gemini.js";
 import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
+import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
+import { DEFAULT_ART_STYLE } from "./config.js";
 import {
   renderChatLog,
   renderCompendium,
@@ -26,7 +28,7 @@ import {
 } from "./ui.js";
 
 let settings = loadSettings();
-let game = null;
+let game = createInitialGameData();
 let globe = null;
 let viewingSphereId = null;
 let activeCompSubtab = "npcs";
@@ -35,9 +37,51 @@ let transientMessages = [];
 
 function setSyncBadge(text, cls = "badge-muted") {
   const b = document.getElementById("sync-badge");
+  if (!b) return;
   b.textContent = text;
   b.className = `badge ${cls}`;
 }
+
+function findEntity(type, id) {
+  if (type === "player") return game.core.player;
+  if (type === "pet") return game.core.pet;
+  if (type === "golem") {
+    return game.core.golems.items.find((g) => (g.id || g.name) === id);
+  }
+  const list = game.compendium[type];
+  if (Array.isArray(list)) {
+    return list.find((item) => (item.id || item.name) === id);
+  }
+  return null;
+}
+
+const mediaHandlers = {
+  onGeneratePrompt: async (type, id) => {
+    const entity = findEntity(type, id);
+    if (!entity) return;
+    const promptText = buildChatGptPrompt(type, entity, settings.artStylePrompt);
+    document.getElementById("prompt-modal-text").value = promptText;
+    document.getElementById("prompt-modal").classList.remove("hidden");
+    try {
+      await navigator.clipboard.writeText(promptText);
+    } catch {
+      // Clipboard pode ser bloqueado em WebView; o modal já deixa pronto para copiar
+    }
+  },
+  onUploadImage: async (type, id, file) => {
+    try {
+      const entity = findEntity(type, id);
+      if (!entity) return;
+      const webpDataUrl = await compressImageToWebP9x16(file);
+      entity.imageWebp = webpDataUrl;
+      await persistGameDataLocal(game);
+      refreshAllViews();
+      await syncIfConfigured(false);
+    } catch (err) {
+      alert(`Falha ao processar imagem: ${err.message}`);
+    }
+  }
+};
 
 function parseCommand(raw) {
   const trimmed = raw.trim();
@@ -64,13 +108,13 @@ function switchTab(tabName) {
     p.classList.toggle("active", p.id === `tab-${tabName}`);
   });
 
-  if (tabName === "sheet") renderSheet(game);
+  if (tabName === "sheet") renderSheet(game, mediaHandlers);
   if (tabName === "quests") renderQuests(game);
   if (tabName === "compendium") {
     const q = document.getElementById("compendium-search").value;
-    renderCompendium(game, settings, activeCompSubtab, q);
+    renderCompendium(game, settings, activeCompSubtab, q, mediaHandlers);
   }
-  if (tabName === "map") {
+  if (tabName === "map" && globe) {
     viewingSphereId = viewingSphereId || game.core.meta.activeSphereId;
     renderSphereSelector(game, viewingSphereId);
     requestAnimationFrame(() => {
@@ -89,8 +133,15 @@ function refreshAllViews() {
   renderPrologueBanner(game);
   renderChatLog(game, transientMessages);
   renderNegotiationBox(game);
-  renderSheet(game);
+  renderSheet(game, mediaHandlers);
   renderQuests(game);
+  renderCompendium(
+    game,
+    settings,
+    activeCompSubtab,
+    document.getElementById("compendium-search")?.value || "",
+    mediaHandlers
+  );
   renderSphereSelector(game, viewingSphereId || game.core.meta.activeSphereId);
   if (globe && game.spheres[viewingSphereId || game.core.meta.activeSphereId]) {
     globe.setSphere(
@@ -134,7 +185,7 @@ async function handleChapterRotationIfNeeded() {
     );
     transientMessages.push({
       mode: "system",
-      text: `📚 Capítulo ${closed.chapterNumber} arquivado na memória longa ("${closed.title}"). Novo capítulo iniciado!`
+      text: `☰ Capítulo ${closed.chapterNumber} arquivado na memória longa ("${closed.title}"). Novo capítulo iniciado!`
     });
   } catch (err) {
     console.warn("Falha ao fechar capítulo automaticamente:", err);
@@ -212,10 +263,6 @@ async function sendTurn(rawInput, negotiationAction = null) {
     await persistGameDataLocal(game);
     refreshAllViews();
     await syncIfConfigured(false);
-
-    if (cmd.openSheet && rawInput.trim() === "/system") {
-      // Mantém resposta visível no chat mas já atualiza ficha em background
-    }
   } catch (err) {
     transientMessages.push({ mode: "error", text: err.message });
     renderChatLog(game, transientMessages);
@@ -239,13 +286,14 @@ async function travelToSphere(targetSphereId) {
 }
 
 function openSettingsModal() {
-  document.getElementById("cfg-gemini-key").value = settings.geminiKey;
-  document.getElementById("cfg-gemini-model").value = settings.geminiModel;
-  document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit;
-  document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit;
-  document.getElementById("cfg-sb-url").value = settings.supabaseUrl;
-  document.getElementById("cfg-sb-key").value = settings.supabaseAnonKey;
-  document.getElementById("cfg-slot-id").value = settings.slotId;
+  document.getElementById("cfg-gemini-key").value = settings.geminiKey || "";
+  document.getElementById("cfg-gemini-model").value = settings.geminiModel || "gemini-2.5-flash";
+  document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
+  document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
+  document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
+  document.getElementById("cfg-sb-key").value = settings.supabaseAnonKey || "";
+  document.getElementById("cfg-slot-id").value = settings.slotId || "white-demon-01";
+  document.getElementById("cfg-art-style").value = settings.artStylePrompt || DEFAULT_ART_STYLE;
   renderHeaderAndQuotas(game, settings);
   document.getElementById("settings-modal").classList.remove("hidden");
 }
@@ -264,13 +312,14 @@ function bindUI() {
         game,
         settings,
         activeCompSubtab,
-        document.getElementById("compendium-search").value
+        document.getElementById("compendium-search").value,
+        mediaHandlers
       );
     });
   });
 
   document.getElementById("compendium-search").addEventListener("input", (e) => {
-    renderCompendium(game, settings, activeCompSubtab, e.target.value);
+    renderCompendium(game, settings, activeCompSubtab, e.target.value, mediaHandlers);
   });
 
   document.querySelectorAll(".chip").forEach((chip) => {
@@ -316,14 +365,31 @@ function bindUI() {
   });
 
   // Mapa
-  document.getElementById("btn-zoom-in").addEventListener("click", () => globe.zoomBy(1.2));
-  document.getElementById("btn-zoom-out").addEventListener("click", () => globe.zoomBy(0.83));
-  document.getElementById("btn-globe-reset").addEventListener("click", () => globe.centerOnActive());
+  document.getElementById("btn-zoom-in").addEventListener("click", () => globe?.zoomBy(1.2));
+  document.getElementById("btn-zoom-out").addEventListener("click", () => globe?.zoomBy(0.83));
+  document.getElementById("btn-globe-reset").addEventListener("click", () => globe?.centerOnActive());
   document.getElementById("sphere-select").addEventListener("change", (e) => {
     viewingSphereId = e.target.value;
-    globe.setSphere(game.spheres[viewingSphereId], game.core.meta.activeNodeId);
-    globe.centerOnActive();
+    globe?.setSphere(game.spheres[viewingSphereId], game.core.meta.activeNodeId);
+    globe?.centerOnActive();
     renderMapNodeCard(game, viewingSphereId, null, travelToSphere);
+  });
+
+  // Prompt Modal
+  document.getElementById("btn-close-prompt").addEventListener("click", () => {
+    document.getElementById("prompt-modal").classList.add("hidden");
+  });
+  document.getElementById("btn-copy-prompt").addEventListener("click", async () => {
+    const txt = document.getElementById("prompt-modal-text").value;
+    try {
+      await navigator.clipboard.writeText(txt);
+      document.getElementById("btn-copy-prompt").textContent = "✓ Copiado!";
+      setTimeout(() => {
+        document.getElementById("btn-copy-prompt").textContent = "◈ Copiar Prompt";
+      }, 1500);
+    } catch {
+      document.getElementById("prompt-modal-text").select();
+    }
   });
 
   // Modal Settings
@@ -342,11 +408,13 @@ function bindUI() {
       geminiTpdLimit: Number(document.getElementById("cfg-gemini-tpd").value) || 1000000,
       supabaseUrl: document.getElementById("cfg-sb-url").value.trim(),
       supabaseAnonKey: document.getElementById("cfg-sb-key").value.trim(),
-      slotId: document.getElementById("cfg-slot-id").value.trim() || "white-demon-01"
+      slotId: document.getElementById("cfg-slot-id").value.trim() || "white-demon-01",
+      artStylePrompt: document.getElementById("cfg-art-style").value.trim() || DEFAULT_ART_STYLE
     };
     saveSettings(settings);
     document.getElementById("settings-modal").classList.add("hidden");
     renderHeaderAndQuotas(game, settings);
+    setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
 
     if (
       settings.geminiKey &&
@@ -428,27 +496,38 @@ function bindUI() {
 }
 
 async function init() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => null);
-  }
-
-  game = await loadGameDataLocal();
-  viewingSphereId = game.core.meta.activeSphereId;
-
-  globe = new SphereGlobe(document.getElementById("globe-canvas"), (node) => {
-    renderMapNodeCard(game, viewingSphereId, node, travelToSphere);
-  });
-
+  // Liga todos os botões imediatamente antes de qualquer operação assíncrona
   bindUI();
   refreshAllViews();
-  setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
 
-  if (
-    settings.geminiKey &&
-    game.core.meta.phase === "prologue_world" &&
-    game.activeChapter.turns.length === 0
-  ) {
-    await sendTurn("__START_PROLOGUE__");
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(() => null);
+    }
+
+    game = await loadGameDataLocal();
+    viewingSphereId = game.core.meta.activeSphereId;
+
+    globe = new SphereGlobe(document.getElementById("globe-canvas"), (node) => {
+      renderMapNodeCard(game, viewingSphereId, node, travelToSphere);
+    });
+
+    refreshAllViews();
+    setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
+
+    if (
+      settings.geminiKey &&
+      game.core.meta.phase === "prologue_world" &&
+      game.activeChapter.turns.length === 0
+    ) {
+      await sendTurn("__START_PROLOGUE__");
+    }
+  } catch (err) {
+    transientMessages.push({
+      mode: "error",
+      text: `Erro ao inicializar armazenamento local: ${err.message}. O jogo continuará em modo de memória.`
+    });
+    renderChatLog(game, transientMessages);
   }
 }
 

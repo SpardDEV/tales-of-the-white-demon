@@ -4,12 +4,18 @@ export const BASE_RANKS = [
   "EX", "EX+"
 ];
 
+export const DEFAULT_ART_STYLE =
+  "Dark fantasy stylized comic-ink illustration, bold expressive black ink lineart, dramatic crosshatching and cel-shaded shadows, high-contrast rim lighting against a pitch-black background, vivid glowing mana accents, vertical 9:16 mobile portrait";
+
+export const PROTAGONIST_APPEARANCE_BASE =
+  "Lean athletic dark-fantasy warrior reminiscent of Grimmjow Jaegerjaquez: wild spiky ice-blue hair, sharp fierce cyan eyes with subtle teal markings under the eyes, jagged pale frost-bone crest along the right jawline, confident predator smirk, tattered white-and-black high-collar haori coat, swirling pale-cyan cryogenic mana shards";
+
 // Marcos orgânicos de referência (não são travas rígidas: servem de guia lógico para o Árbitro de IA)
 export const PROGRESSION_MILESTONES = [
   { approxLevel: 1, tag: "cryo_seed", desc: "Engenheiro recém-reencarnado: criocinese básica, sobrevivência pé no chão, estudo físico do novo mundo." },
   { approxLevel: 37, tag: "rough_bio_cryo", desc: "Manipulação grosseira de mana tentando imitar sistemas musculares e órgãos; estudo de morfologia de monstros para tentar replicar com gelo." },
   { approxLevel: 48, tag: "mana_awakening", desc: "Consciência da Mana nasce por ação e reação: clona a forma de agir e reagir do protagonista, mas com personalidade própria." },
-  { approxLevel: 70, tag: "golem_1", desc: "Capacidade de forjar o 1º Golem de Gelo autossustentável (gera sua própria mana; construção demorada e custosa; teto de 7 Golens Mestres)." },
+  { approxLevel: 70, tag: "golem_1", desc: "Capacidade de forjar o 1º Golem de Gelo autossustentável (gera sua própria mana; construção demorada; nome e personalidade escolhidos pelo jogador; teto de 7 Golens Mestres)." },
   { approxLevel: 100, tag: "body_nanocryo", desc: "Alterações corporais reais com nanogerenciamento de gelo em fibras musculares, tendões e nervos." },
   { approxLevel: 120, tag: "golem_2", desc: "Forja do 2º Golem autossustentável." },
   { approxLevel: 330, tag: "time_freeze_proto", desc: "Primeiras tentativas reais de congelar o tempo (custo absurdo de mana e desgaste severo no corpo)." },
@@ -30,7 +36,8 @@ export const DEFAULT_SETTINGS = {
   supabaseUrl: "",
   supabaseAnonKey: "",
   slotId: "white-demon-01",
-  supabaseStorageLimitMb: 500
+  supabaseStorageLimitMb: 500,
+  artStylePrompt: DEFAULT_ART_STYLE
 };
 
 export const TERRAIN_GLYPHS = {

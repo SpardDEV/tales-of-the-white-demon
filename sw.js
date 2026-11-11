@@ -1,10 +1,11 @@
-const CACHE_NAME = "twd-shell-v1";
+const CACHE_NAME = "twd-shell-v2";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./manifest.json",
   "./src/config.js",
+  "./src/media.js",
   "./src/state.js",
   "./src/prompts.js",
   "./src/gemini.js",
@@ -36,8 +37,10 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy)).catch(() => null);
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, copy)).catch(() => null);
+        }
         return res;
       })
       .catch(() => caches.match(event.request))
