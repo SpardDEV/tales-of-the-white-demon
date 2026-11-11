@@ -1,4 +1,4 @@
-const CACHE_NAME = "twd-shell-v9";
+const CACHE_NAME = "twd-shell-v12";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const ASSETS = [
   "./src/prompts.js",
   "./src/rules.js",
   "./src/gemini.js",
+  "./src/tts.js",
   "./src/supabase.js",
   "./src/globe.js",
   "./src/ui.js",

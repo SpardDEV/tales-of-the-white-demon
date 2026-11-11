@@ -385,9 +385,12 @@ export async function fetchChapterOnDemand(settings, chapterId, usage) {
 const SYNCED_SETTING_KEYS = [
   "geminiKey",
   "geminiPaidKey",
+  "ttsKey",
+  "ttsVoice",
   "geminiModel",
   "geminiEpicModel",
   "geminiClassifierModel",
+  "epicManualOnly",
   "monthlyBudgetUsd",
   "geminiRpdLimit",
   "geminiTpdLimit",

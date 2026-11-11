@@ -218,7 +218,7 @@ REGRAS ESTRITAS DO ÁRBITRO:
    - bioma: ${fx.bioma.join(", ")}
    - musica: ${fx.musica.join(", ")}
    - haptico: ${fx.haptico.join(", ")}
-10. NARRADOR ÉPICO: "epico": true SOMENTE quando o PRÓXIMO turno for chefe, clímax, revelação maior ou morte iminente (o próximo turno usará um modelo mais caro). Nos demais, false.
+10. NARRADOR ÉPICO: "epico": true SOMENTE em luta contra CHEFE nomeado de arco, clímax de capítulo ou morte inevitável. Combate comum, exploração, treino, diálogo e forja normal = false.
 11. LIMITES POR TURNO (o código corta o excesso): xpDelta até ${TURN_RULES.maxXpFactor}× o xpToNext atual; setLevel no máximo +${TURN_RULES.maxLevelJump}; cada atributo ±${TURN_RULES.maxAttributeDelta}; manaMax/staminaMax ±${TURN_RULES.maxPoolMaxDelta}. Progresso grande se divide em vários turnos.
 12. SEM MENU DE OPÇÕES: NUNCA liste escolhas ("você ataca, corre ou lança magia?"). Descreva a situação com contexto, ameaça e detalhes que o jogador pode explorar, e termine SEMPRE convidando-o a agir de forma entrelaçada à cena, variando a forma (um olhar do inimigo, um silêncio, um NPC esperando resposta). Ele decide; você resolve.
 13. RESOLUÇÃO DE AÇÕES (cálculo bruto + liberdade narrativa): para cada ação arriscada, pondere atributos (controle_precisao para acertar, agilidade para esquivar, forca/mana_espirito para dano, vitalidade para resistir), estados atuais (zonzo, exausto, lesões em core.player.injuries), terreno e a esquiva/defesa/armadura do alvo, e as leis de core.magicSystem. Decida: errou, raspão, acerto, crítico — e ONDE pegou e o que isso causou. Crítico (sorte/execução perfeita) multiplica o dano bruto por ~1,5 a 2; acertar um PONTO FRACO conhecido do alvo (fraquezas do bestiário, lesão já aberta, junta da armadura) também multiplica (~1,5) ou ignora parte da armadura; os dois se somam. Resuma a conta em "combatLog" (ex: "Precisão 15 − zonzo 4 vs Esquiva 22 → raspão · dano 18 − armadura 6 = 12 no braço esquerdo"). Os números são representativos: use-os como base e ajuste em prol de uma narrativa de webtoon de respeito — sem armadura de protagonista que o salva sempre, sem morte gratuita.
@@ -307,8 +307,8 @@ export function buildClassifierPrompt(game, playerText) {
   const p = game.core.player;
   const last = game.activeChapter.turns.at(-1)?.narrative || "";
   return {
-    systemPrompt: `Você classifica turnos de um RPG dark fantasy para escolher o modelo de IA.
-"epico": true SOMENTE se a ação do jogador levar a: luta contra chefe, clímax de arco, revelação maior, morte iminente ou forja/despertar de poder importante. Exploração, diálogo comum, compras, descanso e consultas = false.
+    systemPrompt: `Você classifica turnos de um RPG dark fantasy para poupar créditos pagos.
+"epico": true ESTRITAMENTE para luta contra CHEFE nomeado ou clímax final de arco. Combate comum, monstros comuns, exploração, diálogo, compras, treino e descanso = false.
 Responda APENAS JSON: {"epico": false}`,
     userMessage: `Nível ${p.level} · HP ${p.hp}/${p.hpMax} · em cena: ${(game.core.nearbyActors || []).join(", ") || "ninguém"}
 Último trecho do mestre: ${last.slice(-400)}

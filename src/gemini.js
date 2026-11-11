@@ -14,7 +14,7 @@ function extractJsonObject(rawText) {
   }
 }
 
-export function recordGeminiUsage(usage, usageMetadata, model = "?") {
+export function recordGeminiUsage(usage, usageMetadata, model = "?", isPaid = false) {
   const day = todayKey();
   if (usage.dayKey !== day) {
     usage.dayKey = day;
@@ -27,6 +27,7 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?") {
   if (usage.monthKey !== month) {
     usage.monthKey = month;
     usage.monthModels = {};
+    usage.paidMonthModels = {};
   }
   const now = Date.now();
   usage.geminiRequests += 1;
@@ -39,7 +40,9 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?") {
   const promptTokens = usageMetadata?.promptTokenCount || 0;
   // thinking tokens são cobrados como saída
   const outputTokens = (usageMetadata?.candidatesTokenCount || 0) + (usageMetadata?.thoughtsTokenCount || 0);
-  for (const bucket of [(usage.models ||= {}), usage.monthModels]) {
+  const buckets = [(usage.models ||= {}), (usage.monthModels ||= {})];
+  if (isPaid) buckets.push((usage.paidMonthModels ||= {}));
+  for (const bucket of buckets) {
     const m = (bucket[model] ||= { req: 0, in: 0, out: 0 });
     m.req += 1;
     m.in += promptTokens;
@@ -48,19 +51,22 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?") {
   return { promptTokens, outputTokens, totalTokens: tokens };
 }
 
-// Cascata: se o modelo/chave pedido falhar por cota, indisponibilidade ou 404, cai para o fallback.
+// Sempre tenta a Chave Free primeiro neste modelo específico.
+// Se ESTE modelo bater cota/exigir billing (429/403), acusa aviso antes de mover SÓ este modelo para a Paga.
 export async function callGemini({
   apiKey,
+  paidApiKey = null,
   model,
-  fallbackModel = null,
-  fallbackApiKey = null,
+  isPaid = false,
+  roleLabel = "IA",
+  onConfirmPaid = null,
   systemPrompt,
   userMessage,
   contextPayload,
   usage,
   temperature = 0.82
 }) {
-  if (!apiKey) {
+  if (!apiKey && !paidApiKey) {
     throw new Error("Configure sua Gemini API Key em ⚙️ Configurações antes de jogar.");
   }
 
@@ -80,42 +86,48 @@ ${payloadText}` : payloadText }] }],
     };
   };
 
-  const attempts =
-    fallbackModel && (fallbackModel !== model || (fallbackApiKey && fallbackApiKey !== apiKey))
-      ? [{ model, key: apiKey }, { model: fallbackModel, key: fallbackApiKey || apiKey }]
-      : [{ model, key: apiKey }];
-  let res;
-  let usedModel = model;
-  for (const att of attempts) {
-    if (!att.key) continue;
-    usedModel = att.model;
-    const body = buildBody(usedModel);
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(att.key)}`;
-    res = await fetch(endpoint, {
+  const send = async (key) => {
+    const body = buildBody(model);
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    return fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (res.ok || !(res.status === 429 || res.status === 404 || res.status >= 500)) break;
+  };
+
+  let usedPaid = Boolean(isPaid && !apiKey);
+  let activeKey = apiKey || paidApiKey;
+  let res = await send(activeKey);
+
+  if (!res.ok && !usedPaid && paidApiKey && paidApiKey !== apiKey && [400, 403, 404, 429].includes(res.status)) {
+    const allowed = typeof onConfirmPaid === "function"
+      ? await onConfirmPaid({ model, roleLabel, status: res.status })
+      : false;
+    if (!allowed) {
+      throw new Error(`Cota gratuita de ${model} (${roleLabel}) atingida (${res.status}); Chave Paga não autorizada.`);
+    }
+    usedPaid = true;
+    res = await send(paidApiKey);
   }
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => "") || "";
     if (res?.status === 429) {
-      throw new Error("Cota do Gemini atingida temporariamente (429). Aguarde alguns segundos ou troque o modelo em ⚙️ Configurações.");
+      throw new Error(`Cota de ${model} (${roleLabel}) atingida (429). Cole uma Chave Paga ou aguarde o reset diário.`);
     }
-    throw new Error(`Erro Gemini (${res?.status || "?"}): ${errText.slice(0, 220)}`);
+    throw new Error(`Erro Gemini em ${model} (${res?.status || "?"}): ${errText.slice(0, 220)}`);
   }
 
   const data = await res.json();
-  const tokenInfo = recordGeminiUsage(usage, data.usageMetadata, usedModel);
+  const tokenInfo = recordGeminiUsage(usage, data.usageMetadata, model, usedPaid);
   const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!candidateText) {
     throw new Error("Resposta vazia da API Gemini (verifique bloqueio de segurança ou modelo).");
   }
 
   const parsed = extractJsonObject(candidateText);
-  return { parsed, tokenInfo, model: usedModel, fellBack: usedModel !== model };
+  return { parsed, tokenInfo, model, usedPaid, fellBack: false };
 }
 
 // Lista os modelos disponíveis diretamente na conta/chave do usuário.

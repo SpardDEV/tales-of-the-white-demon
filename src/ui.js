@@ -1,6 +1,7 @@
 import { canUndo, getChapterLocal, todayKey } from "./state.js";
-import { estimateCostUsd } from "./config.js";
+import { estimateCostUsd, TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
 import { fetchChapterOnDemand } from "./supabase.js";
+import { estimateTtsCost, formatTtsCost, getTtsMonthlyByTier } from "./tts.js";
 
 function esc(str) {
   return String(str ?? "")
@@ -89,25 +90,71 @@ function formatNarrativeHtml(text) {
     .join("");
 }
 
-// Heimdall: custo por modelo (hoje e no mês) contra o orçamento mensal.
+// Heimdall: custo real da Chave Paga vs economia no Free.
 function costReport(usage, settings) {
   const month = todayKey().slice(0, 7);
   const monthModels = usage.monthKey === month ? usage.monthModels || {} : {};
+  const paidModels = usage.monthKey === month ? usage.paidMonthModels || {} : {};
   const lines = (models) =>
     Object.entries(models)
       .map(([name, m]) => `  ${name}: ${m.req} req · ${(m.in / 1000).toFixed(1)}k in / ${(m.out / 1000).toFixed(1)}k out · US$ ${estimateCostUsd({ [name]: m }).toFixed(3)}`)
       .join("\n") || "  (sem chamadas)";
   const budget = Number(settings.monthlyBudgetUsd) || 0;
-  const spent = estimateCostUsd(monthModels);
-  const pct = budget ? ((spent / budget) * 100).toFixed(1) : "—";
-  const keysInfo = `APIs: Free ${settings.geminiKey ? "✓" : "—"} · Paga ${settings.geminiPaidKey ? "✓" : "usa Free"}`;
+  const paidSpent = estimateCostUsd(paidModels);
+  const freeRef = Math.max(0, estimateCostUsd(monthModels) - paidSpent);
+  const pct = budget ? ((paidSpent / budget) * 100).toFixed(1) : "—";
+  const modeLabel = settings.epicManualOnly ? "Só com /epic" : "Auto em chefes";
+  const keysInfo = `APIs: Free ${settings.geminiKey ? "✓" : "—"} · Paga ${settings.geminiPaidKey ? "✓" : "usa Free"} · Épico: ${modeLabel}`;
+  const dayUnlocked = Object.keys(usage.paidUnlocked?.[usage.dayKey] || {});
+  const paidUnlockNote = dayUnlocked.length ? `Liberados na Paga hoje: ${dayUnlocked.join(", ")}\n` : "";
+  const ttsChars = usage.ttsMonthKey === month ? usage.ttsMonthChars || 0 : 0;
+  const ttsUsd = usage.ttsMonthKey === month ? usage.ttsMonthUsd || 0 : 0;
+  const ttsBillableUsd = usage.ttsMonthKey === month ? usage.ttsMonthBillableUsd || 0 : 0;
+  const ttsCents = ttsUsd * USD_TO_BRL_REF * 100;
+  const byTier = getTtsMonthlyByTier(usage);
+  const neural2Left = Math.max(0, 1000000 - byTier.neural2).toLocaleString("pt-BR");
+  const wavenetLeft = Math.max(0, 4000000 - byTier.wavenet).toLocaleString("pt-BR");
   return (
-    `Heimdall — custo estimado (tarifa paga; no free tier o real é US$ 0):\n` +
-    `Hoje (US$ ${estimateCostUsd(usage.models || {}).toFixed(3)}):\n${lines(usage.models || {})}\n` +
-    `Mês ${month} (US$ ${spent.toFixed(2)} / ${budget} · ${pct}%):\n${lines(monthModels)}\n` +
+    `Heimdall — proteção por modelo (R$ 30 ≈ US$ 5):\n` +
+    `Chave Paga no mês ${month}: US$ ${paidSpent.toFixed(3)} / US$ ${budget} (${pct}%)\n` +
+    `Economizado na Chave Free (US$ 0 reais): ~US$ ${freeRef.toFixed(3)}\n` +
+    paidUnlockNote +
+    `TTS Voz (${settings.ttsVoice || "pt-BR-Neural2-B"}): Neural2 ${neural2Left} / 1M grátis · WaveNet ${wavenetLeft} / 4M grátis\n` +
+    `TTS Mês (${ttsChars.toLocaleString("pt-BR")} chars): ref. ~${ttsCents.toFixed(2)}¢ · cobrável pós-franquia US$ ${ttsBillableUsd.toFixed(4)}\n` +
+    `Hoje (todas as chamadas):\n${lines(usage.models || {})}\n` +
     `${keysInfo}\n` +
     `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"} · classificador ${settings.geminiClassifierModel || "desligado"}`
   );
+}
+
+export function renderTtsBreakdown(usage) {
+  const month = todayKey().slice(0, 7);
+  const hist = usage.ttsMonthKey === month ? usage.ttsHistory || [] : [];
+  const totalUsd = usage.ttsMonthKey === month ? usage.ttsMonthUsd || 0 : 0;
+  const billableUsd = usage.ttsMonthKey === month ? usage.ttsMonthBillableUsd || 0 : 0;
+  const totalCents = totalUsd * USD_TO_BRL_REF * 100;
+  const byTier = getTtsMonthlyByTier(usage);
+  const btn = document.getElementById("btn-tts-breakdown");
+  if (btn) {
+    btn.textContent = `🔊 Gasto TTS por Mensagem (Real: US$ ${billableUsd.toFixed(4)} | Ref.: ~${totalCents.toFixed(2)}¢)`;
+  }
+  const box = document.getElementById("tts-breakdown-box");
+  if (!box) return;
+  if (!hist.length) {
+    box.textContent = "Nenhuma fala TTS gerada neste mês ainda. Clique em '🔊 Ouvir' em qualquer mensagem do chat.";
+    return;
+  }
+  const header = `Neural2: ${byTier.neural2.toLocaleString("pt-BR")}/1.000.000 | WaveNet: ${byTier.wavenet.toLocaleString("pt-BR")}/4.000.000\n`;
+  box.textContent =
+    header +
+    hist
+      .slice()
+      .reverse()
+      .map((h) => {
+        const tag = h.withinFreeTier === false ? "pós-franquia" : "na franquia";
+        return `• Turno ${h.turn ?? "?"} (${h.label}): ${formatTtsCost(h.usd, h.brlCents, h.chars)} [${h.tier} · ${tag}]`;
+      })
+      .join("\n");
 }
 
 export function renderHeaderAndQuotas(game, settings) {
@@ -154,6 +201,7 @@ export function renderHeaderAndQuotas(game, settings) {
   if (undoBtn) {
     undoBtn.classList.toggle("hidden", !canUndo());
   }
+  renderTtsBreakdown(usage);
 }
 
 export function renderPrologueBanner(game) {
@@ -193,6 +241,8 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
     </div>`;
   }
 
+  const ttsVoice = handlers.getTtsVoice ? handlers.getTtsVoice() : "pt-BR-Neural2-B";
+
   turns.forEach((t, idx) => {
     if (t.user) {
       html += `<div class="msg msg-user"><div class="msg-body">${formatNarrativeHtml(t.user)}</div></div>`;
@@ -212,10 +262,18 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
             </div>
           </div>`
         : "";
+      const ttsEst = estimateTtsCost(t.narrative, ttsVoice, t.mode, true);
+      const ttsCostTxt = t.ttsPaid
+        ? `Gasto: ${formatTtsCost(t.ttsPaid.usd, t.ttsPaid.brlCents, t.ttsPaid.chars)}`
+        : `Estima: ~${ttsEst.brlCents.toFixed(2)}¢ (${ttsEst.chars} ch)`;
 
       html += `<div class="msg msg-ai ${m.cls}">
         <div class="msg-tag">${m.label}</div>
         <div class="msg-body">${formatNarrativeHtml(t.narrative)}</div>
+        <div class="msg-tts-bar">
+          <span class="tts-cost-pill" title="Toque em Total TTS nas Configurações para ver o extrato completo">${ttsCostTxt}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-tts-speak" data-turn-idx="${idx}">🔊 Ouvir</button>
+        </div>
         ${sceneBlock}
       </div>`;
     }
@@ -231,6 +289,12 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
 
   log.innerHTML = html;
   log.scrollTop = log.scrollHeight;
+
+  log.querySelectorAll(".btn-tts-speak").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (handlers.onSpeakTurn) handlers.onSpeakTurn(Number(btn.dataset.turnIdx), btn);
+    });
+  });
 
   log.querySelectorAll(".btn-scene-prompt").forEach((btn) => {
     btn.addEventListener("click", () => {

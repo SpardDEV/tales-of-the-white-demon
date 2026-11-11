@@ -90,12 +90,13 @@
             <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/compass.svg)"></i> /world</button>
             <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/grid.svg)"></i> /system</button>
             <button class="chip" data-cmd="/mana " title="Falar direto com a Consciência da Mana"><i class="mono-icon ico" style="--i:url(assets_curated/icons/game/mana-points.svg)"></i> /mana</button>
+            <button class="chip chip-warn" data-cmd="/epic " title="Usar Narrador Épico só neste turno">⚡ /epic</button>
           </div>
           <form id="chat-form" class="chat-form">
             <textarea
               id="chat-input"
               rows="2"
-              placeholder="Descreva sua ação, responda ou use /pray, /world, /system, /mana..."
+              placeholder="Descreva sua ação, responda ou use /pray, /world, /system, /mana, /epic..."
             ></textarea>
             <button id="btn-send" type="submit" class="btn btn-ice send-btn">Enviar</button>
           </form>
@@ -248,8 +249,28 @@
           </div>
         </div>
         <div class="form-group">
-          <label for="cfg-budget">Orçamento mensal (US$) — acima dele o Narrador Épico desliga</label>
-          <input id="cfg-budget" type="number" min="0" step="1" value="41" />
+          <label for="cfg-budget">Orçamento mensal da Chave Paga (US$ — R$ 30 ≈ US$ 5)</label>
+          <input id="cfg-budget" type="number" min="0" step="0.5" value="5" />
+        </div>
+        <label class="check-row" for="cfg-epic-manual">
+          <input id="cfg-epic-manual" type="checkbox" checked />
+          <span>🛡 Economia máxima: só chamar Narrador Épico quando eu digitar <code>/epic</code></span>
+        </label>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-tts-voice">🔊 Voz TTS (SSML pitch em chefes/falas)</label>
+            <select id="cfg-tts-voice">
+              <option value="pt-BR-Neural2-B">Neural2 Masculina (1M/mês grátis · $16/1M)</option>
+              <option value="pt-BR-Neural2-A">Neural2 Feminina (1M/mês grátis · $16/1M)</option>
+              <option value="pt-BR-Wavenet-B">WaveNet Masculina (4M/mês grátis · $4/1M)</option>
+              <option value="browser">Navegador Local (R$ 0 · offline)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cfg-tts-key">Google Cloud TTS Key (opcional · ou usa Paga)</label>
+            <input id="cfg-tts-key" type="password" placeholder="AIza... (se vazia, usa Chave Paga)" />
+          </div>
         </div>
 
         <hr class="sep" />
@@ -300,6 +321,10 @@
         </div>
 
         <div class="quota-detail-box" id="quota-detail-box"></div>
+        <div class="btn-row" style="margin-bottom:10px;">
+          <button id="btn-tts-breakdown" type="button" class="btn btn-ghost btn-sm">🔊 Ver Gasto TTS por Mensagem (Total: 0,00¢)</button>
+        </div>
+        <div class="quota-detail-box hidden" id="tts-breakdown-box"></div>
 
         <div class="btn-row">
           <button id="btn-open-webtoon" class="btn btn-ghost btn-sm">🎞 Estúdio Webtoon</button>

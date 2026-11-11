@@ -32,6 +32,7 @@ import {
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
+import { speakMessage, stopTts } from "./tts.js";
 import { applyFx, initSensory, isMuted, playMusic, setBiome, setMuted, startQte, updateStatusFx } from "./sensory.js";
 import {
   renderChatLog,
@@ -58,8 +59,62 @@ function freeGeminiKey() {
   return (settings.geminiKey || settings.geminiPaidKey || "").trim();
 }
 
-function epicGeminiKey() {
-  return (settings.geminiPaidKey || settings.geminiKey || "").trim();
+function paidBudgetAllowed() {
+  const month = todayKey().slice(0, 7);
+  const paidModels = game.usage.monthKey === month ? game.usage.paidMonthModels || {} : {};
+  return estimateCostUsd(paidModels) < (Number(settings.monthlyBudgetUsd) || 0);
+}
+
+function paidWithinBudgetKey() {
+  const pk = (settings.geminiPaidKey || "").trim();
+  return pk && paidBudgetAllowed() ? pk : "";
+}
+
+function isModelPaidUnlockedToday(model) {
+  return Boolean(game.usage.paidUnlocked?.[todayKey()]?.[model]);
+}
+
+async function confirmPaidForModel({ model, roleLabel, status }) {
+  const pk = (settings.geminiPaidKey || "").trim();
+  if (!pk) return false;
+  if (!paidBudgetAllowed()) {
+    alert(`Orçamento mensal (US$ ${settings.monthlyBudgetUsd}) já atingido. ${model} não moverá para a Chave Paga.`);
+    return false;
+  }
+  const day = todayKey();
+  if (game.usage.paidUnlocked?.[day]?.[model]) return true;
+  const reason = status === 429 ? "atingiu a cota gratuita diária (429)" : `exigiu conta paga/acesso (${status})`;
+  const ok = confirm(
+    `⚠ AVISO DE COTA — ${roleLabel}\n\n` +
+    `O modelo "${model}" ${reason} na Chave Free.\n` +
+    `Deseja liberar a Chave Paga SÓ para "${model}" hoje?\n\n` +
+    `(Os outros modelos continuam tentando o Free primeiro.)`
+  );
+  if (!ok) return false;
+  ((game.usage.paidUnlocked ||= {})[day] ||= {})[model] = true;
+  transientMessages.push({
+    mode: "system",
+    text: `⚠ ${model} (${roleLabel}) movido para a Chave Paga hoje após confirmação. Demais modelos seguem no Free.`
+  });
+  return true;
+}
+
+function callModelPreferFree({ model, roleLabel, systemPrompt, userMessage, contextPayload = null, temperature = 0.82 }) {
+  const pk = paidWithinBudgetKey();
+  const alreadyPaid = isModelPaidUnlockedToday(model) && !!pk;
+  return callGemini({
+    apiKey: alreadyPaid ? pk : freeGeminiKey(),
+    paidApiKey: alreadyPaid ? null : pk,
+    model,
+    isPaid: alreadyPaid,
+    roleLabel,
+    onConfirmPaid: confirmPaidForModel,
+    systemPrompt,
+    userMessage,
+    contextPayload,
+    usage: game.usage,
+    temperature
+  });
 }
 
 function consumeMagicConnectLink() {
@@ -123,6 +178,53 @@ async function attachMediaToId(mediaId, file) {
 }
 
 const uiHandlers = {
+  getTtsVoice: () => settings.ttsVoice || "pt-BR-Neural2-B",
+  onSpeakTurn: async (turnIdx, btnEl) => {
+    const turn = game.activeChapter.turns[turnIdx];
+    if (!turn?.narrative) return;
+    if (isMuted()) {
+      alert("Modo Furtivo (Mute) está ligado no topo direito. Desative para ouvir falas.");
+      return;
+    }
+    const prev = btnEl ? btnEl.textContent : "🔊 Ouvir";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "🔊 ...";
+    }
+    try {
+      const res = await speakMessage({
+        text: turn.narrative,
+        mode: turn.mode || "narrative",
+        settings,
+        usage: game.usage,
+        turnIndex: turn.turn || turnIdx + 1,
+        label: turn.mode || "narrative",
+        onSwitchVoice: async (nextVoice) => {
+          settings.ttsVoice = nextVoice;
+          saveSettings(settings);
+          fillSettingsModalFields();
+          pushUserSettingsToSupabase(settings).catch(() => {});
+        }
+      });
+      if (!res.freeBrowser) {
+        turn.ttsPaid = {
+          chars: res.chars,
+          usd: res.usd,
+          brlCents: res.brlCents,
+          withinFreeTier: res.withinFreeTier
+        };
+      }
+      await persistGameDataLocal(game);
+      refreshAllViews();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = prev;
+      }
+    }
+  },
   onShowPromptText: (text) => openPromptModal(text),
   onGeneratePrompt: async (type, id) => {
     const entity = findEntity(type, id);
@@ -165,13 +267,11 @@ const uiHandlers = {
       ...game.compendium.npcs.map((n) => ({ id: n.id || n.name, name: n.name || n.id }))
     ];
     const { systemPrompt, userMessage } = buildWebtoonPrompt(chapter, cast, settings.artStylePrompt);
-    const { parsed } = await callGemini({
-      apiKey: freeGeminiKey(),
+    const { parsed } = await callModelPreferFree({
       model: settings.geminiModel,
+      roleLabel: "Roteiro Webtoon",
       systemPrompt,
       userMessage,
-      contextPayload: null,
-      usage: game.usage,
       temperature: 0.7
     });
     const ids = new Set(cast.map((c) => c.id));
@@ -305,6 +405,9 @@ function parseCommand(raw) {
   if (trimmed.startsWith("/mana")) {
     return { mode: "mana", text: trimmed.slice(5).trim() || "(Tentar sentir ou conversar com a Consciência da Mana)" };
   }
+  if (trimmed.startsWith("/epic")) {
+    return { mode: "narrative", text: trimmed.slice(5).trim() || "(Confronto decisivo!)", forceEpic: true };
+  }
   return { mode: "narrative", text: trimmed };
 }
 
@@ -381,13 +484,11 @@ async function handleChapterRotationIfNeeded() {
   if (!shouldRotateChapter(game)) return;
   try {
     const { systemPrompt, userPrompt } = buildChapterSummaryPrompt(game.activeChapter);
-    const { parsed } = await callGemini({
-      apiKey: freeGeminiKey(),
+    const { parsed } = await callModelPreferFree({
       model: settings.geminiModel,
+      roleLabel: "Resumo de Capítulo",
       systemPrompt,
-      userMessage: userPrompt,
-      contextPayload: null,
-      usage: game.usage
+      userMessage: userPrompt
     });
     const closed = await rotateChapter(
       game,
@@ -420,49 +521,52 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
     const contextPayload = buildContextPayload(game, cmd.text, focusTarget);
 
-    // Cascata: turno comum no modelo barato; épico no modelo caro, se houver orçamento.
-    // Épico = marcado pela IA no turno anterior OU pelo classificador barato sobre a ação atual.
-    const monthModels = game.usage.monthKey === todayKey().slice(0, 7) ? game.usage.monthModels : {};
-    const epicAllowed =
+    // Cada modelo tenta sua cota Free primeiro; se UM modelo acabar a cota Free, avisa antes de liberar Paga só para ele.
+    const epicCandidate =
       !!settings.geminiEpicModel &&
       game.core.meta.phase === "active_game" &&
-      !negotiationAction &&
-      estimateCostUsd(monthModels) < (Number(settings.monthlyBudgetUsd) || 0);
-    let epic = epicAllowed && !!game.core.meta.nextEpic;
-    let epicBy = "marca do turno anterior";
-    if (epicAllowed && !epic && settings.geminiClassifierModel && cmd.mode === "narrative") {
-      try {
-        const c = buildClassifierPrompt(game, cmd.text);
-        const { parsed: cls } = await callGemini({
-          apiKey: freeGeminiKey(),
-          model: settings.geminiClassifierModel,
-          systemPrompt: c.systemPrompt,
-          userMessage: c.userMessage,
-          contextPayload: null,
-          usage: game.usage,
-          temperature: 0
-        });
-        epic = cls?.epico === true;
-        epicBy = "classificador";
-      } catch (err) {
-        console.warn("Classificador falhou, turno segue no modelo comum:", err);
+      !negotiationAction;
+    const manualLock = settings.epicManualOnly !== false;
+    let epic = false;
+    let epicBy = "";
+    if (epicCandidate && cmd.forceEpic) {
+      epic = true;
+      epicBy = "comando /epic";
+    } else if (epicCandidate && !manualLock) {
+      if (game.core.meta.nextEpic) {
+        epic = true;
+        epicBy = "marca do turno anterior";
+      } else if (settings.geminiClassifierModel && cmd.mode === "narrative") {
+        try {
+          const c = buildClassifierPrompt(game, cmd.text);
+          const { parsed: cls } = await callModelPreferFree({
+            model: settings.geminiClassifierModel,
+            roleLabel: "Classificador Rápido",
+            systemPrompt: c.systemPrompt,
+            userMessage: c.userMessage,
+            temperature: 0
+          });
+          epic = cls?.epico === true;
+          epicBy = "classificador";
+        } catch (err) {
+          console.warn("Classificador falhou, turno segue no modelo comum:", err);
+        }
       }
     }
-    const { parsed, model: usedModel, fellBack } = await callGemini({
-      apiKey: epic ? epicGeminiKey() : freeGeminiKey(),
-      model: epic ? settings.geminiEpicModel : settings.geminiModel,
-      fallbackModel: epic ? settings.geminiModel : null,
-      fallbackApiKey: epic ? freeGeminiKey() : null,
+    const chosenModel = epic ? settings.geminiEpicModel : settings.geminiModel;
+    const roleLabel = epic ? "Narrador Épico" : "Narrador Comum";
+    const { parsed, model: usedModel, usedPaid } = await callModelPreferFree({
+      model: chosenModel,
+      roleLabel,
       systemPrompt,
-      userMessage: rawInput,
-      contextPayload,
-      usage: game.usage
+      userMessage: cmd.forceEpic ? cmd.text : rawInput,
+      contextPayload
     });
     game.core.meta.nextEpic = parsed.epico === true;
     if (epic) {
       transientMessages.push({
         mode: "system",
-        text: fellBack ? `⚡ Narrador Épico sem cota — turno narrado por ${usedModel}.` : `⚡ Narrador Épico (${usedModel}, por ${epicBy})`
+        text: `⚡ Narrador Épico (${usedModel} · ${usedPaid ? "Chave Paga" : "Cota Free"}, por ${epicBy})`
       });
     }
 
@@ -616,7 +720,12 @@ function fillSettingsModalFields() {
   setSelectValue("cfg-gemini-model", settings.geminiModel || "gemini-3.5-flash-lite");
   setSelectValue("cfg-gemini-epic", settings.geminiEpicModel ?? "gemini-3.8-flash");
   setSelectValue("cfg-gemini-classifier", settings.geminiClassifierModel ?? "gemma-4-31b-it");
-  document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 41;
+  document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 5;
+  const epManual = document.getElementById("cfg-epic-manual");
+  if (epManual) epManual.checked = settings.epicManualOnly !== false;
+  setSelectValue("cfg-tts-voice", settings.ttsVoice || "pt-BR-Neural2-B");
+  const ttsKeyEl = document.getElementById("cfg-tts-key");
+  if (ttsKeyEl) ttsKeyEl.value = settings.ttsKey || "";
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
@@ -745,7 +854,7 @@ function bindUI() {
         switchTab("sheet");
         return;
       }
-      inp.value = cmd + inp.value.replace(/^\/(pray|world|system|mana)\s*/i, "");
+      inp.value = cmd + inp.value.replace(/^\/(pray|world|system|mana|epic)\s*/i, "");
       inp.focus();
     });
   });
@@ -848,9 +957,13 @@ function bindUI() {
   paintMute();
   muteBtn.addEventListener("click", () => {
     setMuted(!isMuted());
+    if (isMuted()) stopTts();
     settings.muted = isMuted();
     saveSettings(settings);
     paintMute();
+  });
+  document.getElementById("btn-tts-breakdown")?.addEventListener("click", () => {
+    document.getElementById("tts-breakdown-box")?.classList.toggle("hidden");
   });
   document.getElementById("quota-strip").addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-settings").addEventListener("click", () => {
@@ -862,9 +975,12 @@ function bindUI() {
       ...settings,
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiPaidKey: document.getElementById("cfg-gemini-paid-key").value.trim(),
+      ttsVoice: document.getElementById("cfg-tts-voice")?.value || "pt-BR-Neural2-B",
+      ttsKey: document.getElementById("cfg-tts-key")?.value.trim() || "",
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
       geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,
+      epicManualOnly: document.getElementById("cfg-epic-manual")?.checked ?? true,
       monthlyBudgetUsd: Number(document.getElementById("cfg-budget").value) || 0,
       geminiRpdLimit: Number(document.getElementById("cfg-gemini-rpd").value) || 250,
       geminiTpdLimit: Number(document.getElementById("cfg-gemini-tpd").value) || 1000000,

@@ -284,6 +284,18 @@ html, body {
   border-bottom: 1px solid rgba(103, 232, 249, 0.14);
 }
 
+.msg-tts-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(103, 232, 249, 0.14);
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
 /* NEGOTIATION */
 .negotiation-box {
   background: #1a150b;
@@ -553,6 +565,22 @@ input, select {
   border-radius: 4px;
   padding: 8px 10px;
   font-size: 0.88rem;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  accent-color: var(--ice-strong);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--ice);
+  margin: 4px 0 10px;
+  cursor: pointer;
 }
 
 /* MAP & GLOBE */
