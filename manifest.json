@@ -1,0 +1,18 @@
+{
+  "name": "Tales of the White Demon",
+  "short_name": "White Demon",
+  "description": "RPG Isekai infinito movido a IA com evolução criogênica guiada, consciência de mana e mapa esférico multiversal.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#070b12",
+  "theme_color": "#0d1624",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'><rect width='128' height='128' rx='24' fill='%23070b12'/><path d='M64 14L76 48L110 36L84 64L110 92L76 80L64 114L52 80L18 92L44 64L18 36L52 48Z' fill='%235eead4' stroke='%23e2f8ff' stroke-width='3'/></svg>",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

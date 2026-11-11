@@ -1,0 +1,539 @@
+import { CHAPTER_MAX_TURNS, computeRankFromLevel, DEFAULT_SETTINGS } from "./config.js";
+
+const DB_NAME = "twd_infinite_rpg_v1";
+const DB_VERSION = 1;
+const SETTINGS_KEY = "twd_local_settings_v1";
+
+export function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return { ...DEFAULT_SETTINGS, ...(raw ? JSON.parse(raw) : {}) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export function saveSettings(settings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+export function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function createInitialGameData() {
+  const chapterId = "chapter_001";
+  const sphereId = "sphere_01";
+  return {
+    core: {
+      meta: {
+        version: 1,
+        phase: "prologue_world", // 'prologue_world' | 'prologue_deity' | 'active_game'
+        prologueQuestionCount: 0,
+        prologueTargetMin: 15,
+        prologueTargetMax: 30,
+        deityQuestionCount: 0,
+        activeChapterId: chapterId,
+        activeChapterNumber: 1,
+        activeSphereId: sphereId,
+        activeNodeId: "node_001",
+        totalTurns: 0
+      },
+      player: {
+        name: "Engenheiro (Sem Nome)",
+        origin: "Engenheiro da Terra (Recém-reencarnado)",
+        level: 1,
+        rank: "F",
+        customRankTypology: null,
+        xp: 0,
+        xpToNext: 100,
+        hp: 100,
+        hpMax: 100,
+        mana: 40,
+        manaMax: 40,
+        stamina: 100,
+        staminaMax: 100,
+        attributes: {
+          vitalidade: 10,
+          forca: 9,
+          agilidade: 10,
+          mana_espirito: 12,
+          controle_precisao: 15,
+          mente_engenharia: 18
+        },
+        bodyModifications: [],
+        titles: ["Alma Deslocada"],
+        statusEffects: []
+      },
+      patronDeity: {
+        name: "Deusa Desconhecida",
+        domain: "A definir",
+        disposition: "Observadora",
+        bond: 0,
+        notes: ""
+      },
+      manaConsciousness: {
+        unlocked: false,
+        name: null,
+        awakenedAtLevel: null,
+        personality: "Dormente — aguardando nascimento por ação e reação.",
+        sync: 0,
+        lastRemarks: []
+      },
+      skills: [],
+      golems: {
+        maxSlots: 7,
+        items: [] // { id, name, rank, coreType, selfSustainingMana, manaPool, role, status }
+      },
+      spatialPocket: {
+        unlocked: false,
+        name: "Mundo de Bolso",
+        storedMana: 0,
+        storedManaCap: 0,
+        storedItems: [],
+        golemsInside: []
+      },
+      pet: {
+        unlocked: false,
+        name: null,
+        species: null,
+        rank: null,
+        bond: 0,
+        abilities: [],
+        notes: ""
+      },
+      inventory: [],
+      quests: {
+        active: [],
+        completed: []
+      },
+      pendingNegotiation: null
+    },
+    spheres: {
+      [sphereId]: {
+        id: sphereId,
+        name: "Esfera Primordial (Em Formação)",
+        order: 1,
+        typologyCeiling: "EX+",
+        canReturn: true,
+        unlockedVia: "Reencarnação inicial",
+        lawsSummary: "As leis desta esfera serão moldadas pelas respostas à Voz do Mundo.",
+        nodes: [
+          {
+            id: "node_001",
+            name: "Vazio Liminar",
+            lat: 0,
+            lon: 0,
+            terrain: "void",
+            asciiGlyph: "※",
+            dangerRank: "N/A",
+            discovered: true,
+            summary: "Ponto de transição entre a morte na Terra e o despertar.",
+            connectedTo: []
+          }
+        ]
+      }
+    },
+    compendium: {
+      npcs: [],
+      bestiary: [],
+      concepts: []
+    },
+    chaptersIndex: [
+      {
+        chapterId,
+        chapterNumber: 1,
+        title: "Prólogo: A Voz e a Patrona",
+        summary: "",
+        turnCount: 0,
+        isClosed: false
+      }
+    ],
+    activeChapter: {
+      chapterId,
+      chapterNumber: 1,
+      title: "Prólogo: A Voz e a Patrona",
+      summary: "",
+      turns: [],
+      turnCount: 0,
+      isClosed: false
+    },
+    usage: {
+      dayKey: todayKey(),
+      geminiRequests: 0,
+      geminiTokens: 0,
+      recentRequestTimestamps: [],
+      supabaseRequests: 0,
+      estimatedBytes: 0
+    }
+  };
+}
+
+// ============================================================================
+// IndexedDB Persistence (local offline mirror + partitioned chapters)
+// ============================================================================
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
+      if (!db.objectStoreNames.contains("chapters")) db.createObjectStore("chapters", { keyPath: "chapterId" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function kvGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", "readonly");
+    const req = tx.objectStore("kv").get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function kvSet(key, val) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", "readwrite");
+    tx.objectStore("kv").put(val, key);
+    tx.oncomplete = () => resolve();
+    req.onerror = () => reject(tx.error);
+  });
+}
+
+export async function saveChapterLocal(chapter) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("chapters", "readwrite");
+    tx.objectStore("chapters").put(chapter);
+    tx.oncomplete = () => resolve();
+    req.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getChapterLocal(chapterId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("chapters", "readonly");
+    const req = tx.objectStore("chapters").get(chapterId);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getAllChaptersLocal() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("chapters", "readonly");
+    const req = tx.objectStore("chapters").getAll();
+    req.onsuccess = () => resolve(req.result ?? []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function clearAllLocal() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["kv", "chapters"], "readwrite");
+    tx.objectStore("kv").clear();
+    tx.objectStore("chapters").clear();
+    tx.oncomplete = () => resolve();
+    req.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadGameDataLocal() {
+  const core = await kvGet("core");
+  if (!core) {
+    const fresh = createInitialGameData();
+    await persistGameDataLocal(fresh);
+    return fresh;
+  }
+  const spheres = (await kvGet("spheres")) || createInitialGameData().spheres;
+  const compendium = (await kvGet("compendium")) || { npcs: [], bestiary: [], concepts: [] };
+  const chaptersIndex = (await kvGet("chaptersIndex")) || [];
+  let usage = (await kvGet("usage")) || createInitialGameData().usage;
+  if (usage.dayKey !== todayKey()) {
+    usage = {
+      ...usage,
+      dayKey: todayKey(),
+      geminiRequests: 0,
+      geminiTokens: 0,
+      recentRequestTimestamps: []
+    };
+  }
+  const activeChapter =
+    (await getChapterLocal(core.meta.activeChapterId)) ||
+    createInitialGameData().activeChapter;
+
+  return { core, spheres, compendium, chaptersIndex, activeChapter, usage };
+}
+
+export async function persistGameDataLocal(game) {
+  game.usage.estimatedBytes = estimateBytesSize(game);
+  await kvSet("core", game.core);
+  await kvSet("spheres", game.spheres);
+  await kvSet("compendium", game.compendium);
+  await kvSet("chaptersIndex", game.chaptersIndex);
+  await kvSet("usage", game.usage);
+  await saveChapterLocal(game.activeChapter);
+}
+
+export function estimateBytesSize(game) {
+  try {
+    const sample = JSON.stringify({
+      core: game.core,
+      spheres: game.spheres,
+      compendium: game.compendium,
+      chaptersIndex: game.chaptersIndex,
+      activeChapter: game.activeChapter
+    });
+    return new Blob([sample]).size;
+  } catch {
+    return 0;
+  }
+}
+
+// ============================================================================
+// Deterministic Patch Application
+// ============================================================================
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+
+function upsertByKey(list, incoming, key = "id") {
+  if (!incoming) return;
+  const idVal = incoming[key] || incoming.name;
+  const idx = list.findIndex((item) => (item[key] || item.name) === idVal);
+  if (idx >= 0) {
+    const prev = list[idx];
+    const mergedFacts = Array.isArray(prev.knownFacts) || Array.isArray(incoming.knownFacts)
+      ? Array.from(new Set([...(prev.knownFacts || []), ...(incoming.knownFacts || [])]))
+      : undefined;
+    list[idx] = { ...prev, ...incoming };
+    if (mergedFacts) list[idx].knownFacts = mergedFacts;
+  } else {
+    list.push({ ...incoming, [key]: idVal });
+  }
+}
+
+export function applyStatePatches(game, patches) {
+  if (!patches || typeof patches !== "object") return;
+  const { core, spheres, compendium } = game;
+  const p = core.player;
+
+  if (typeof patches.playerName === "string" && patches.playerName.trim()) {
+    p.name = patches.playerName.trim();
+  }
+
+  if (typeof patches.hpMaxDelta === "number") p.hpMax = Math.max(10, p.hpMax + patches.hpMaxDelta);
+  if (typeof patches.manaMaxDelta === "number") p.manaMax = Math.max(0, p.manaMax + patches.manaMaxDelta);
+  if (typeof patches.staminaMaxDelta === "number") p.staminaMax = Math.max(10, p.staminaMax + patches.staminaMaxDelta);
+
+  if (typeof patches.hpDelta === "number") p.hp = clamp(p.hp + patches.hpDelta, 0, p.hpMax);
+  if (typeof patches.manaDelta === "number") p.mana = clamp(p.mana + patches.manaDelta, 0, p.manaMax);
+  if (typeof patches.staminaDelta === "number") p.stamina = clamp(p.stamina + patches.staminaDelta, 0, p.staminaMax);
+
+  if (typeof patches.xpDelta === "number" && patches.xpDelta > 0) {
+    p.xp += patches.xpDelta;
+    while (p.xp >= p.xpToNext) {
+      p.xp -= p.xpToNext;
+      p.level += 1;
+      p.hpMax += 12;
+      p.manaMax += 8;
+      p.staminaMax += 8;
+      p.hp = p.hpMax;
+      p.mana = p.manaMax;
+      p.stamina = p.staminaMax;
+      p.xpToNext = Math.round(100 * Math.pow(1.12, Math.min(p.level, 80)) + p.level * 35);
+    }
+  }
+
+  if (typeof patches.setLevel === "number" && patches.setLevel > p.level) {
+    p.level = patches.setLevel;
+  }
+  if (typeof patches.customRankTypology === "string" && patches.customRankTypology.trim()) {
+    p.customRankTypology = patches.customRankTypology.trim();
+  }
+  p.rank = computeRankFromLevel(p.level, p.customRankTypology);
+
+  if (patches.attributeDeltas && typeof patches.attributeDeltas === "object") {
+    for (const [k, v] of Object.entries(patches.attributeDeltas)) {
+      if (typeof v === "number") {
+        p.attributes[k] = Math.max(1, (p.attributes[k] || 10) + v);
+      }
+    }
+  }
+
+  if (Array.isArray(patches.bodyModifications)) {
+    for (const mod of patches.bodyModifications) {
+      if (mod && !p.bodyModifications.includes(mod)) p.bodyModifications.push(mod);
+    }
+  }
+  if (Array.isArray(patches.titlesAdded)) {
+    for (const t of patches.titlesAdded) {
+      if (t && !p.titles.includes(t)) p.titles.push(t);
+    }
+  }
+  if (Array.isArray(patches.statusEffects)) {
+    p.statusEffects = patches.statusEffects;
+  }
+
+  if (patches.patronDeityPatch && typeof patches.patronDeityPatch === "object") {
+    core.patronDeity = { ...core.patronDeity, ...patches.patronDeityPatch };
+  }
+
+  if (patches.manaConsciousnessPatch && typeof patches.manaConsciousnessPatch === "object") {
+    const mc = core.manaConsciousness;
+    const patch = patches.manaConsciousnessPatch;
+    if (patch.unlocked === true && !mc.unlocked) {
+      mc.unlocked = true;
+      mc.awakenedAtLevel = p.level;
+    }
+    if (patch.name) mc.name = patch.name;
+    if (patch.personality) mc.personality = patch.personality;
+    if (typeof patch.syncDelta === "number") mc.sync = clamp(mc.sync + patch.syncDelta, 0, 100);
+    if (patch.remark) {
+      mc.lastRemarks = [patch.remark, ...mc.lastRemarks].slice(0, 6);
+    }
+  }
+
+  if (Array.isArray(patches.skillUpdates)) {
+    for (const su of patches.skillUpdates) {
+      upsertByKey(core.skills, su, "id");
+    }
+  }
+
+  if (Array.isArray(patches.golemUpdates)) {
+    for (const g of patches.golemUpdates) {
+      const exists = core.golems.items.some((x) => x.id === g.id || x.name === g.name);
+      if (exists || core.golems.items.length < core.golems.maxSlots) {
+        upsertByKey(core.golems.items, g, "id");
+      }
+    }
+  }
+
+  if (patches.spatialPocketPatch && typeof patches.spatialPocketPatch === "object") {
+    core.spatialPocket = { ...core.spatialPocket, ...patches.spatialPocketPatch };
+  }
+
+  if (patches.petPatch && typeof patches.petPatch === "object") {
+    core.pet = { ...core.pet, ...patches.petPatch };
+  }
+
+  if (Array.isArray(patches.itemsAdded)) {
+    for (const item of patches.itemsAdded) {
+      if (item) p.inventory ? p.inventory.push(item) : core.inventory.push(item);
+    }
+  }
+  if (Array.isArray(patches.itemsRemoved)) {
+    core.inventory = core.inventory.filter((it) => !patches.itemsRemoved.includes(it));
+  }
+
+  if (Array.isArray(patches.questUpdates)) {
+    for (const q of patches.questUpdates) {
+      if (!q || !q.title) continue;
+      const qId = q.id || q.title.toLowerCase().replace(/\s+/g, "_");
+      if (q.status === "completed") {
+        core.quests.active = core.quests.active.filter((x) => x.id !== qId && x.title !== q.title);
+        upsertByKey(core.quests.completed, { ...q, id: qId }, "id");
+      } else {
+        upsertByKey(core.quests.active, { ...q, id: qId }, "id");
+      }
+    }
+  }
+
+  if (patches.compendiumUpdates && typeof patches.compendiumUpdates === "object") {
+    const cu = patches.compendiumUpdates;
+    if (Array.isArray(cu.npcs)) cu.npcs.forEach((n) => upsertByKey(compendium.npcs, n, "id"));
+    if (Array.isArray(cu.bestiary)) cu.bestiary.forEach((b) => upsertByKey(compendium.bestiary, b, "id"));
+    if (Array.isArray(cu.concepts)) cu.concepts.forEach((c) => upsertByKey(compendium.concepts, c, "id"));
+  }
+
+  if (patches.newSphere && patches.newSphere.id) {
+    const s = patches.newSphere;
+    spheres[s.id] = {
+      order: Object.keys(spheres).length + 1,
+      canReturn: true,
+      nodes: [],
+      ...s
+    };
+  }
+
+  if (patches.sphereUpdate && typeof patches.sphereUpdate === "object") {
+    const targetId = patches.sphereUpdate.id || core.meta.activeSphereId;
+    if (spheres[targetId]) {
+      spheres[targetId] = { ...spheres[targetId], ...patches.sphereUpdate, nodes: spheres[targetId].nodes };
+    }
+  }
+
+  if (Array.isArray(patches.mapUpdates)) {
+    for (const node of patches.mapUpdates) {
+      const sId = node.sphereId || core.meta.activeSphereId;
+      const sphere = spheres[sId];
+      if (!sphere) continue;
+      upsertByKey(sphere.nodes, { discovered: true, connectedTo: [], ...node }, "id");
+    }
+  }
+
+  if (patches.activeSphereId && spheres[patches.activeSphereId]) {
+    core.meta.activeSphereId = patches.activeSphereId;
+  }
+  if (patches.activeNodeId) {
+    core.meta.activeNodeId = patches.activeNodeId;
+  }
+}
+
+export function shouldRotateChapter(game) {
+  return (
+    game.core.meta.phase === "active_game" &&
+    game.activeChapter.turnCount >= CHAPTER_MAX_TURNS
+  );
+}
+
+export async function rotateChapter(game, summaryText, nextTitle = "") {
+  const closed = {
+    ...game.activeChapter,
+    summary: summaryText || game.activeChapter.summary || "Capítulo concluído.",
+    isClosed: true
+  };
+  await saveChapterLocal(closed);
+
+  const idxEntry = game.chaptersIndex.find((c) => c.chapterId === closed.chapterId);
+  if (idxEntry) {
+    idxEntry.summary = closed.summary;
+    idxEntry.turnCount = closed.turnCount;
+    idxEntry.isClosed = true;
+    idxEntry.title = closed.title;
+  }
+
+  const nextNum = game.core.meta.activeChapterNumber + 1;
+  const nextId = `chapter_${String(nextNum).padStart(3, "0")}`;
+  const nextChapter = {
+    chapterId: nextId,
+    chapterNumber: nextNum,
+    title: nextTitle || `Capítulo ${nextNum}`,
+    summary: "",
+    turns: [],
+    turnCount: 0,
+    isClosed: false
+  };
+
+  game.core.meta.activeChapterId = nextId;
+  game.core.meta.activeChapterNumber = nextNum;
+  game.chaptersIndex.push({
+    chapterId: nextId,
+    chapterNumber: nextNum,
+    title: nextChapter.title,
+    summary: "",
+    turnCount: 0,
+    isClosed: false
+  });
+  game.activeChapter = nextChapter;
+  await persistGameDataLocal(game);
+  return closed;
+}
