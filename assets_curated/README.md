@@ -16,4 +16,4 @@ Gerado por `python tools/curate_assets.py` a partir de `ASSETS/_raw_extracted/` 
 
 **Direção de arte:** os fundos saem em cor original; o overlay escuro + vinheta (`rgba(5,7,12,0.82)`) e o blur ficam no CSS da Fase 2. O `vale` é o mais claro/saturado — use com overlay mais forte ou só em eventos.
 
-**Licenças a observar:** Kenney = CC0. Música: CC BY (Nakarada, creatorchords, PeriTune etc.) — exige crédito no app. `vazio_espacial` e `amb_nevasca` vêm da parte "ambient" do resource pack (porte GPL-3.0 de sons estilo Minecraft) — origem exata não verificada; troque antes de publicar comercialmente. Frostwindz: ver `.docx` em `licenses/`.
+**Licenças:** app de uso pessoal; as licenças originais ficam em `licenses/` só como registro.

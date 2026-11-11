@@ -1,4 +1,4 @@
-const CACHE_NAME = "twd-shell-v3";
+const CACHE_NAME = "twd-shell-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,7 +12,9 @@ const ASSETS = [
   "./src/supabase.js",
   "./src/globe.js",
   "./src/ui.js",
-  "./src/main.js"
+  "./src/main.js",
+  "./src/sensory.js",
+  "./assets_curated/catalog.json"
 ];
 
 self.addEventListener("install", (event) => {

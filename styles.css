@@ -632,3 +632,132 @@ input, select {
   margin-bottom: 10px;
   white-space: pre-wrap;
 }
+
+/* ===== FASE 2 — MOTOR SENSORIAL ===== */
+#app { position: relative; z-index: 1; }
+
+/* Fundo de bioma: sempre sob vinheta escura pesada, nunca em brilho total atrás do texto */
+#bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--bg) center / cover no-repeat;
+  filter: blur(2px) saturate(0.7);
+  transition: background-image 1.2s ease;
+}
+#bg-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(5, 7, 12, 0.72) 0%, rgba(5, 7, 12, 0.94) 75%);
+}
+body[data-biome="vale"] #bg-layer::after { background: rgba(5, 7, 12, 0.9); }
+
+/* Material You por bioma: só o acento muda */
+body[data-biome="floresta"] { --ice: #86efac; }
+body[data-biome="ermo"] { --ice: #fcd34d; }
+body[data-biome="vale"] { --ice: #a5f3fc; }
+
+#vfx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: hidden;
+}
+.vfx-particle {
+  position: absolute;
+  top: -40px;
+  opacity: 0.85;
+  animation: vfx-fall linear forwards;
+}
+.vfx-chuva { opacity: 0.45; animation-name: vfx-rain; }
+.vfx-vagalume, .vfx-estrela { animation-name: vfx-float; }
+@keyframes vfx-fall {
+  to { transform: translate(40px, 110vh) rotate(240deg); opacity: 0; }
+}
+@keyframes vfx-rain {
+  to { transform: translate(-30px, 110vh); }
+}
+@keyframes vfx-float {
+  0% { top: 70%; opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { top: 10%; transform: translateX(30px); opacity: 0; }
+}
+.vfx-slash {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: 256px;
+  height: 256px;
+  margin: -128px 0 0 -128px;
+  background-size: 1280px 512px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 8px var(--ice));
+  animation: vfx-slash 0.5s steps(5) forwards;
+}
+@keyframes vfx-slash {
+  from { background-position: 0 0; }
+  to { background-position: -1280px 0; }
+}
+
+body.fx-tremor #app { animation: fx-tremor 0.5s; }
+@keyframes fx-tremor {
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(6px, -3px); }
+  60% { transform: translate(-4px, 2px); }
+  80% { transform: translate(3px, -1px); }
+}
+body.fx-flash #vfx-layer { animation: fx-flash 0.6s; }
+@keyframes fx-flash {
+  0% { background: rgba(230, 241, 255, 0.65); }
+  100% { background: transparent; }
+}
+
+/* Status na tela: bordas pulsando */
+body.st-critico #vfx-layer { box-shadow: inset 0 0 60px rgba(248, 113, 113, 0.55); animation: st-pulse 1.1s infinite; }
+body.st-sangue #vfx-layer { box-shadow: inset 0 0 50px rgba(185, 28, 28, 0.5); animation: st-pulse 1.4s infinite; }
+body.st-veneno #vfx-layer { box-shadow: inset 0 0 50px rgba(132, 204, 22, 0.45); animation: st-pulse 1.8s infinite; }
+body.st-congelado #vfx-layer { box-shadow: inset 0 0 70px rgba(103, 232, 249, 0.5); animation: st-pulse 2.4s infinite; }
+@keyframes st-pulse { 50% { opacity: 0.45; } }
+
+/* QTE físico */
+#qte-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(5, 7, 12, 0.88);
+  border: 2px solid var(--danger);
+}
+.qte-text {
+  font-family: "BoldPixels", var(--font-mono);
+  font-size: 1.6rem;
+  color: var(--warn);
+  text-align: center;
+  animation: st-pulse 0.6s infinite;
+}
+.qte-bar {
+  width: 70%;
+  height: 6px;
+  background: var(--danger);
+  transform-origin: left;
+  animation: qte-time 10s linear forwards;
+}
+#qte-overlay.hidden .qte-bar { animation: none; }
+@keyframes qte-time { to { transform: scaleX(0); } }
+
+@font-face {
+  font-family: "BoldPixels";
+  src: url("./assets_curated/fonts/boldpixels.ttf") format("truetype");
+  font-display: swap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vfx-particle, .vfx-slash, body.fx-tremor #app { animation-duration: 0.01s !important; }
+}

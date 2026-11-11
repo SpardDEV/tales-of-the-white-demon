@@ -18,6 +18,7 @@ import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase } from "
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE } from "./config.js";
+import { applyFx, initSensory, isMuted, playMusic, setBiome, setMuted, startQte, updateStatusFx } from "./sensory.js";
 import {
   renderChatLog,
   renderCompendium,
@@ -241,6 +242,9 @@ function switchTab(tabName) {
 
 function refreshAllViews() {
   renderHeaderAndQuotas(game, settings);
+  updateStatusFx(game.core.player);
+  setBiome(game.core.meta.ambient?.bioma);
+  playMusic(game.core.meta.ambient?.musica);
   renderPrologueBanner(game);
   renderChatLog(game, transientMessages, uiHandlers);
   renderNegotiationBox(game);
@@ -346,6 +350,16 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
 
     if (parsed.statePatches) {
       applyStatePatches(game, parsed.statePatches);
+    }
+
+    applyFx(parsed);
+    const ambient = (game.core.meta.ambient ||= {});
+    if (parsed.bioma) ambient.bioma = parsed.bioma;
+    if (typeof parsed.musica === "string") ambient.musica = parsed.musica;
+    if (parsed.qte_fisico) {
+      const kind = parsed.qte_fisico;
+      // roda depois do finally (isSending já liberado) e devolve o resultado como próximo turno
+      setTimeout(() => startQte(kind, (ok) => sendTurn(`[QTE físico "${kind}": ${ok ? "SUCESSO" : "FALHOU"}]`)), 0);
     }
 
     // Se veio de um mini-chat de Skill/Projeto e a IA não enviou devLogEntry explícito, registramos automaticamente!
@@ -554,6 +568,19 @@ function bindUI() {
 
   // Modal Settings
   document.getElementById("btn-open-settings").addEventListener("click", openSettingsModal);
+
+  const muteBtn = document.getElementById("btn-mute");
+  const paintMute = () => {
+    muteBtn.textContent = isMuted() ? "✕" : "♪";
+    muteBtn.title = isMuted() ? "Modo Furtivo ligado (sem som)" : "Som ligado — toque para Modo Furtivo";
+  };
+  paintMute();
+  muteBtn.addEventListener("click", () => {
+    setMuted(!isMuted());
+    settings.muted = isMuted();
+    saveSettings(settings);
+    paintMute();
+  });
   document.getElementById("quota-strip").addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-settings").addEventListener("click", () => {
     document.getElementById("settings-modal").classList.add("hidden");
@@ -661,6 +688,7 @@ function bindUI() {
 }
 
 async function init() {
+  await initSensory(settings.muted);
   bindUI();
   refreshAllViews();
 

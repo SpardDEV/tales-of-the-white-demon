@@ -1,4 +1,5 @@
 import { DEFAULT_ART_STYLE, PROGRESSION_MILESTONES } from "./config.js";
+import { fxKeys } from "./sensory.js";
 
 function stripHeavyFields(obj) {
   return JSON.parse(
@@ -181,6 +182,7 @@ FORMATO OBRIGATÓRIO: retorne APENAS JSON válido:
 - Se "cancel": cancele sem penalidade.\n`
     : "";
 
+  const fx = fxKeys();
   return `Você é o Motor Dual (Narrador + Árbitro Lógico) de "Tales of the White Demon", RPG Isekai Dark Fantasy infinito inspirado na progressão pé-no-chão até superdimensional de "Tales of Demons and Gods".
 
 MODO ATUAL DO TURNO:
@@ -205,12 +207,24 @@ REGRAS ESTRITAS DO ÁRBITRO:
 6. NEGOCIAÇÃO ("Aceitar, Forçar ou Esporro"): proponha "counter_offer" se passar do Rank/hardLimits; se forçar, dê "forced_with_cost" ou "scolded_blocked".
 7. PROMPT DE CENA 9:16 ("scenePrompt"): apenas em lutas épicas, chefes, descoberta de item raro ou marco dramático, preencha "scenePrompt" com um prompt completo em inglês no estilo "${DEFAULT_ART_STYLE}" (incluindo o visual do protagonista e a cena). Nos turnos comuns deixe null.
 8. FOG OF WAR ESTRITO: só atualize Compêndio e Mapa ("mapUpdates" com region, lat, lon, terrain, asciiGlyph, portalToSphereId se for fenda para outra esfera) com o que foi realmente descoberto.
+9. MOTOR SENSORIAL (opcional, só quando a cena pedir; senão null): "sfx" (1 chave ou lista curta), "vfx", "bioma" (só ao mudar de região), "musica" (só ao mudar o clima da cena), "haptico" (peso da ação), "qte_fisico" ("agitar" | "inclinar", raro: captura, equilíbrio, fuga — o resultado chega no próximo turno). Use APENAS estas chaves:
+   - sfx: ${fx.sfx.join(", ")}
+   - vfx: ${fx.vfx.join(", ")}
+   - bioma: ${fx.bioma.join(", ")}
+   - musica: ${fx.musica.join(", ")}
+   - haptico: ${fx.haptico.join(", ")}
 
 FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
 {
   "mode": "${commandMode}",
   "narrative": "Texto completo em português (use símbolos monocromáticos como ❄ ◈ ❖ ⚔ ✦ no /system, sem emojis coloridos).",
   "scenePrompt": null,
+  "sfx": null,
+  "vfx": null,
+  "bioma": null,
+  "musica": null,
+  "haptico": null,
+  "qte_fisico": null,
   "negotiation": {
     "active": false,
     "status": "none | approved | counter_offer | forced_with_cost | scolded_blocked",

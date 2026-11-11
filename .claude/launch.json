@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "twd", "runtimeExecutable": "python", "runtimeArgs": ["-m", "http.server", "5178"], "port": 5178 }
+  ]
+}

@@ -9,6 +9,13 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <div id="bg-layer" aria-hidden="true"></div>
+  <div id="vfx-layer" aria-hidden="true"></div>
+  <div id="qte-overlay" class="hidden" role="alertdialog" aria-live="assertive">
+    <div class="qte-text">AGITE O CELULAR!</div>
+    <div class="qte-bar"></div>
+    <button class="qte-giveup btn btn-ghost btn-sm">Desistir</button>
+  </div>
   <div id="app">
     <!-- HEADER + QUOTA BARS -->
     <header class="topbar">
@@ -22,6 +29,7 @@
         </div>
         <div class="topbar-actions">
           <span id="sync-badge" class="badge badge-muted" title="Status de sincronização">Local</span>
+          <button id="btn-mute" class="icon-btn mono-icon" title="Modo Furtivo (Mute)">♪</button>
           <button id="btn-open-settings" class="icon-btn mono-icon" title="Configurações & API">⚙</button>
         </div>
       </div>

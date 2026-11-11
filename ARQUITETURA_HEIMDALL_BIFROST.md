@@ -109,7 +109,7 @@ Os assets possuem **4 linguagens diferentes** (Comic-Ink Dark Fantasy dos retrat
 
 ### 4. Próximas Entregas Sugeridas para o Claude
 1. ✅ **(Feito 11/11/2026 — ver [assets_curated/README.md](./assets_curated/README.md) e `tools/curate_assets.py`) Curadoria de `ASSETS/`:** Descompactar em `ASSETS/_raw_extracted/`, catalogar os melhores arquivos, converter fundos para WebP e SFX/loops selecionados para OGG/MP3 em `assets_curated/` (mantendo tamanho total web enxuto).
-2. **UI & Motor Sensorial Web/Bifrost:**
+2. 🟡 **(Parcial 11/11/2026 — `src/sensory.js`: SFX, música por cena, VFX de tela, fundo de bioma com vinheta + acento por bioma, háptico, bordas de status, QTE físico e botão Mute; chaves no JSON do Gemini, regra 9 de `prompts.js`. Falta: ícones SVG/bordas bitmap na UI e camada nativa Capacitor) UI & Motor Sensorial Web/Bifrost:**
    - Aplicar bordas, ícones SVG monocromáticos e fundos de bioma dinâmico na interface atual (`index.html` + `styles.css`).
    - Adicionar motor leve de **SFX local + VFX de tela** (chaves `"sfx"` e `"vfx"` no JSON do Gemini) com botão **Modo Furtivo (Mute)**.
    - Adicionar suporte a **Vibração Háptica (`navigator.vibrate`)** e **QTE Físico (`DeviceMotionEvent` / acelerômetro)** no navegador/WebView, além de preparar a camada nativa (Capacitor/Flutter/Android WebView) para o Galaxy S23.
