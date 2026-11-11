@@ -10,14 +10,15 @@ import {
   rotateChapter,
   saveMediaLocal,
   saveSettings,
-  shouldRotateChapter
+  shouldRotateChapter,
+  todayKey
 } from "./state.js";
 import { buildChapterSummaryPrompt, buildContextPayload, buildSystemPrompt } from "./prompts.js";
 import { callGemini } from "./gemini.js";
 import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
-import { DEFAULT_ART_STYLE } from "./config.js";
+import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
 import { applyFx, initSensory, isMuted, playMusic, setBiome, setMuted, startQte, updateStatusFx } from "./sensory.js";
 import {
   renderChatLog,
@@ -324,14 +325,29 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
     const contextPayload = buildContextPayload(game, cmd.text, focusTarget);
 
-    const { parsed } = await callGemini({
+    // Cascata: turno comum no modelo barato; épico (marcado pela IA no turno anterior) no modelo caro, se houver orçamento.
+    const monthModels = game.usage.monthKey === todayKey().slice(0, 7) ? game.usage.monthModels : {};
+    const epic =
+      !!settings.geminiEpicModel &&
+      !!game.core.meta.nextEpic &&
+      game.core.meta.phase === "active_game" &&
+      estimateCostUsd(monthModels) < (Number(settings.monthlyBudgetUsd) || 0);
+    const { parsed, model: usedModel, fellBack } = await callGemini({
       apiKey: settings.geminiKey,
-      model: settings.geminiModel,
+      model: epic ? settings.geminiEpicModel : settings.geminiModel,
+      fallbackModel: epic ? settings.geminiModel : null,
       systemPrompt,
       userMessage: rawInput,
       contextPayload,
       usage: game.usage
     });
+    game.core.meta.nextEpic = parsed.epico === true;
+    if (epic) {
+      transientMessages.push({
+        mode: "system",
+        text: fellBack ? `⚡ Narrador Épico sem cota — turno narrado por ${usedModel}.` : `⚡ Narrador Épico (${usedModel})`
+      });
+    }
 
     const prevPhase = game.core.meta.phase;
     if (prevPhase === "prologue_world" && parsed.questionAsked) {
@@ -440,6 +456,8 @@ async function travelToSphere(targetSphereId) {
 function openSettingsModal() {
   document.getElementById("cfg-gemini-key").value = settings.geminiKey || "";
   document.getElementById("cfg-gemini-model").value = settings.geminiModel || "gemini-2.5-flash";
+  document.getElementById("cfg-gemini-epic").value = settings.geminiEpicModel ?? "gemini-2.5-pro";
+  document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 41;
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
@@ -591,6 +609,8 @@ function bindUI() {
       ...settings,
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiModel: document.getElementById("cfg-gemini-model").value,
+      geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
+      monthlyBudgetUsd: Number(document.getElementById("cfg-budget").value) || 0,
       geminiRpdLimit: Number(document.getElementById("cfg-gemini-rpd").value) || 250,
       geminiTpdLimit: Number(document.getElementById("cfg-gemini-tpd").value) || 1000000,
       supabaseUrl: document.getElementById("cfg-sb-url").value.trim(),

@@ -1,4 +1,4 @@
-const CACHE_NAME = "twd-shell-v4";
+const CACHE_NAME = "twd-shell-v5";
 const ASSETS = [
   "./",
   "./index.html",

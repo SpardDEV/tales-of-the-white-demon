@@ -187,7 +187,7 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="cfg-gemini-model">Modelo Gemini</label>
+            <label for="cfg-gemini-model">Narrador comum</label>
             <select id="cfg-gemini-model">
               <option value="gemini-2.5-flash">gemini-2.5-flash (Recomendado)</option>
               <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Mais cota)</option>
@@ -195,13 +195,27 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="cfg-gemini-epic">Narrador épico (chefes/clímax)</label>
+            <select id="cfg-gemini-epic">
+              <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+              <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+              <option value="">Desligado (sem cascata)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
             <label for="cfg-gemini-rpd">Limite diário (RPD)</label>
             <input id="cfg-gemini-rpd" type="number" min="10" max="50000" value="250" />
           </div>
+          <div class="form-group">
+            <label for="cfg-gemini-tpd">Limite diário de Tokens (TPD)</label>
+            <input id="cfg-gemini-tpd" type="number" min="10000" step="50000" value="1000000" />
+          </div>
         </div>
         <div class="form-group">
-          <label for="cfg-gemini-tpd">Limite diário estimado de Tokens (TPD)</label>
-          <input id="cfg-gemini-tpd" type="number" min="10000" step="50000" value="1000000" />
+          <label for="cfg-budget">Orçamento mensal (US$) — acima dele o Narrador Épico desliga</label>
+          <input id="cfg-budget" type="number" min="0" step="1" value="41" />
         </div>
 
         <hr class="sep" />

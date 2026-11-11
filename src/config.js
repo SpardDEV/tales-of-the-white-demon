@@ -30,6 +30,8 @@ export const CHAPTER_MAX_TURNS = 45;
 export const DEFAULT_SETTINGS = {
   geminiKey: "",
   geminiModel: "gemini-2.5-flash",
+  geminiEpicModel: "gemini-2.5-pro", // "" = sem cascata
+  monthlyBudgetUsd: 41,
   geminiRpdLimit: 250,
   geminiTpdLimit: 1000000,
   geminiRpmLimit: 15,
@@ -39,6 +41,21 @@ export const DEFAULT_SETTINGS = {
   supabaseStorageLimitMb: 500,
   artStylePrompt: DEFAULT_ART_STYLE
 };
+
+// US$ por 1M tokens (tarifa paga, prompt ≤200k). Thinking conta como saída.
+export const MODEL_PRICES_USD = {
+  "gemini-2.5-pro": { in: 1.25, out: 10 },
+  "gemini-2.5-flash": { in: 0.3, out: 2.5 },
+  "gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
+  "gemini-2.0-flash": { in: 0.1, out: 0.4 }
+};
+
+export function estimateCostUsd(models = {}) {
+  return Object.entries(models).reduce((sum, [model, m]) => {
+    const p = MODEL_PRICES_USD[model] || MODEL_PRICES_USD["gemini-2.5-flash"];
+    return sum + (m.in * p.in + m.out * p.out) / 1e6;
+  }, 0);
+}
 
 export const TERRAIN_GLYPHS = {
   forest: "♣♣",

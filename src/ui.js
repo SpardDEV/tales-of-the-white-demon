@@ -1,4 +1,5 @@
-import { canUndo, getChapterLocal } from "./state.js";
+import { canUndo, getChapterLocal, todayKey } from "./state.js";
+import { estimateCostUsd } from "./config.js";
 import { fetchChapterOnDemand } from "./supabase.js";
 
 function esc(str) {
@@ -81,6 +82,25 @@ function renderDevLogAndMiniChat({ kind, id, name, devLog = [], placeholder }) {
   `;
 }
 
+// Heimdall: custo por modelo (hoje e no mês) contra o orçamento mensal.
+function costReport(usage, settings) {
+  const month = todayKey().slice(0, 7);
+  const monthModels = usage.monthKey === month ? usage.monthModels || {} : {};
+  const lines = (models) =>
+    Object.entries(models)
+      .map(([name, m]) => `  ${name}: ${m.req} req · ${(m.in / 1000).toFixed(1)}k in / ${(m.out / 1000).toFixed(1)}k out · US$ ${estimateCostUsd({ [name]: m }).toFixed(3)}`)
+      .join("\n") || "  (sem chamadas)";
+  const budget = Number(settings.monthlyBudgetUsd) || 0;
+  const spent = estimateCostUsd(monthModels);
+  const pct = budget ? ((spent / budget) * 100).toFixed(1) : "—";
+  return (
+    `Heimdall — custo estimado (tarifa paga; no free tier o real é US$ 0):\n` +
+    `Hoje (US$ ${estimateCostUsd(usage.models || {}).toFixed(3)}):\n${lines(usage.models || {})}\n` +
+    `Mês ${month} (US$ ${spent.toFixed(2)} / ${budget} · ${pct}%):\n${lines(monthModels)}\n` +
+    `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"}`
+  );
+}
+
 export function renderHeaderAndQuotas(game, settings) {
   const { core, usage } = game;
   const sub = document.getElementById("header-sub");
@@ -114,10 +134,11 @@ export function renderHeaderAndQuotas(game, settings) {
   if (detailBox) {
     detailBox.textContent =
       `Consumo Medido (Dia ${usage.dayKey}):\n` +
-      `• Gemini Flash: ${usage.geminiRequests} reqs hoje (${rpm}/${settings.geminiRpmLimit} RPM no último min)\n` +
+      `• Gemini: ${usage.geminiRequests} reqs hoje (${rpm}/${settings.geminiRpmLimit} RPM no último min)\n` +
       `• Tokens Gemini reais (usageMetadata): ${usage.geminiTokens.toLocaleString("pt-BR")} / ${tpdLimit.toLocaleString("pt-BR")}\n` +
       `• Save + Imagens WebP 9:16: ${(usage.estimatedBytes / 1024).toFixed(1)} KB (${usedMb.toFixed(3)} MB / ${sbLimitMb} MB)\n` +
-      `• Chamadas Supabase na sessão/dia: ${usage.supabaseRequests || 0}`;
+      `• Chamadas Supabase na sessão/dia: ${usage.supabaseRequests || 0}\n\n` +
+      costReport(usage, settings);
   }
 
   const undoBtn = document.getElementById("btn-undo-turn");

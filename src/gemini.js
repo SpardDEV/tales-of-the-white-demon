@@ -14,13 +14,19 @@ function extractJsonObject(rawText) {
   }
 }
 
-export function recordGeminiUsage(usage, usageMetadata) {
+export function recordGeminiUsage(usage, usageMetadata, model = "?") {
   const day = todayKey();
   if (usage.dayKey !== day) {
     usage.dayKey = day;
     usage.geminiRequests = 0;
     usage.geminiTokens = 0;
     usage.recentRequestTimestamps = [];
+    usage.models = {};
+  }
+  const month = day.slice(0, 7);
+  if (usage.monthKey !== month) {
+    usage.monthKey = month;
+    usage.monthModels = {};
   }
   const now = Date.now();
   usage.geminiRequests += 1;
@@ -30,19 +36,23 @@ export function recordGeminiUsage(usage, usageMetadata) {
   ];
   const tokens = usageMetadata?.totalTokenCount || 0;
   usage.geminiTokens += tokens;
-  return {
-    promptTokens: usageMetadata?.promptTokenCount || 0,
-    outputTokens: usageMetadata?.candidatesTokenCount || 0,
-    totalTokens: tokens
-  };
+  const promptTokens = usageMetadata?.promptTokenCount || 0;
+  // thinking tokens são cobrados como saída
+  const outputTokens = (usageMetadata?.candidatesTokenCount || 0) + (usageMetadata?.thoughtsTokenCount || 0);
+  for (const bucket of [(usage.models ||= {}), usage.monthModels]) {
+    const m = (bucket[model] ||= { req: 0, in: 0, out: 0 });
+    m.req += 1;
+    m.in += promptTokens;
+    m.out += outputTokens;
+  }
+  return { promptTokens, outputTokens, totalTokens: tokens };
 }
 
-export async function callGemini({ apiKey, model, systemPrompt, userMessage, contextPayload, usage }) {
+// Cascata: se o modelo pedido falhar por cota/sobrecarga, cai para fallbackModel.
+export async function callGemini({ apiKey, model, fallbackModel = null, systemPrompt, userMessage, contextPayload, usage }) {
   if (!apiKey) {
     throw new Error("Configure sua Gemini API Key em ⚙️ Configurações antes de jogar.");
   }
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const payloadText = contextPayload
     ? `ESTADO ATUAL DO JOGO (JSON):\n${JSON.stringify(contextPayload)}\n\nENTRADA DO JOGADOR:\n${userMessage}`
@@ -64,11 +74,18 @@ export async function callGemini({ apiKey, model, systemPrompt, userMessage, con
     }
   };
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
+  const models = fallbackModel && fallbackModel !== model ? [model, fallbackModel] : [model];
+  let res;
+  let usedModel;
+  for (usedModel of models) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (res.ok || !(res.status === 429 || res.status >= 500)) break;
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -79,12 +96,12 @@ export async function callGemini({ apiKey, model, systemPrompt, userMessage, con
   }
 
   const data = await res.json();
-  const tokenInfo = recordGeminiUsage(usage, data.usageMetadata);
+  const tokenInfo = recordGeminiUsage(usage, data.usageMetadata, usedModel);
   const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!candidateText) {
     throw new Error("Resposta vazia da API Gemini (verifique bloqueio de segurança ou modelo).");
   }
 
   const parsed = extractJsonObject(candidateText);
-  return { parsed, tokenInfo };
+  return { parsed, tokenInfo, model: usedModel, fellBack: usedModel !== model };
 }

@@ -213,6 +213,7 @@ REGRAS ESTRITAS DO ÁRBITRO:
    - bioma: ${fx.bioma.join(", ")}
    - musica: ${fx.musica.join(", ")}
    - haptico: ${fx.haptico.join(", ")}
+10. NARRADOR ÉPICO: "epico": true SOMENTE quando o PRÓXIMO turno for chefe, clímax, revelação maior ou morte iminente (o próximo turno usará um modelo mais caro). Nos demais, false.
 
 FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
 {
@@ -225,6 +226,7 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
   "musica": null,
   "haptico": null,
   "qte_fisico": null,
+  "epico": false,
   "negotiation": {
     "active": false,
     "status": "none | approved | counter_offer | forced_with_cost | scolded_blocked",

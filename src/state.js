@@ -397,7 +397,8 @@ export async function loadGameDataLocal() {
       dayKey: todayKey(),
       geminiRequests: 0,
       geminiTokens: 0,
-      recentRequestTimestamps: []
+      recentRequestTimestamps: [],
+      models: {}
     };
   }
   if (!Array.isArray(usage.dirtyMediaIds)) usage.dirtyMediaIds = [];
