@@ -13,7 +13,8 @@ import {
   shouldRotateChapter,
   todayKey
 } from "./state.js";
-import { buildChapterSummaryPrompt, buildContextPayload, buildSystemPrompt } from "./prompts.js";
+import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt } from "./prompts.js";
+import { enforceTurnRules } from "./rules.js";
 import { callGemini } from "./gemini.js";
 import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
@@ -325,13 +326,34 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
     const contextPayload = buildContextPayload(game, cmd.text, focusTarget);
 
-    // Cascata: turno comum no modelo barato; épico (marcado pela IA no turno anterior) no modelo caro, se houver orçamento.
+    // Cascata: turno comum no modelo barato; épico no modelo caro, se houver orçamento.
+    // Épico = marcado pela IA no turno anterior OU pelo classificador barato sobre a ação atual.
     const monthModels = game.usage.monthKey === todayKey().slice(0, 7) ? game.usage.monthModels : {};
-    const epic =
+    const epicAllowed =
       !!settings.geminiEpicModel &&
-      !!game.core.meta.nextEpic &&
       game.core.meta.phase === "active_game" &&
+      !negotiationAction &&
       estimateCostUsd(monthModels) < (Number(settings.monthlyBudgetUsd) || 0);
+    let epic = epicAllowed && !!game.core.meta.nextEpic;
+    let epicBy = "marca do turno anterior";
+    if (epicAllowed && !epic && settings.geminiClassifierModel && cmd.mode === "narrative") {
+      try {
+        const c = buildClassifierPrompt(game, cmd.text);
+        const { parsed: cls } = await callGemini({
+          apiKey: settings.geminiKey,
+          model: settings.geminiClassifierModel,
+          systemPrompt: c.systemPrompt,
+          userMessage: c.userMessage,
+          contextPayload: null,
+          usage: game.usage,
+          temperature: 0
+        });
+        epic = cls?.epico === true;
+        epicBy = "classificador";
+      } catch (err) {
+        console.warn("Classificador falhou, turno segue no modelo comum:", err);
+      }
+    }
     const { parsed, model: usedModel, fellBack } = await callGemini({
       apiKey: settings.geminiKey,
       model: epic ? settings.geminiEpicModel : settings.geminiModel,
@@ -345,7 +367,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     if (epic) {
       transientMessages.push({
         mode: "system",
-        text: fellBack ? `⚡ Narrador Épico sem cota — turno narrado por ${usedModel}.` : `⚡ Narrador Épico (${usedModel})`
+        text: fellBack ? `⚡ Narrador Épico sem cota — turno narrado por ${usedModel}.` : `⚡ Narrador Épico (${usedModel}, por ${epicBy})`
       });
     }
 
@@ -365,6 +387,9 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     }
 
     if (parsed.statePatches) {
+      // /world é o modo de mestre do jogador: sem limites por turno
+      const cuts = cmd.mode === "world" ? [] : enforceTurnRules(parsed.statePatches, game.core.player);
+      if (cuts.length) transientMessages.push({ mode: "system", text: `◈ Árbitro cortou o excesso: ${cuts.join(", ")}` });
       applyStatePatches(game, parsed.statePatches);
     }
 
@@ -457,6 +482,7 @@ function openSettingsModal() {
   document.getElementById("cfg-gemini-key").value = settings.geminiKey || "";
   document.getElementById("cfg-gemini-model").value = settings.geminiModel || "gemini-2.5-flash";
   document.getElementById("cfg-gemini-epic").value = settings.geminiEpicModel ?? "gemini-2.5-pro";
+  document.getElementById("cfg-gemini-classifier").value = settings.geminiClassifierModel ?? "gemini-2.5-flash-lite";
   document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 41;
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
@@ -610,6 +636,7 @@ function bindUI() {
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
+      geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,
       monthlyBudgetUsd: Number(document.getElementById("cfg-budget").value) || 0,
       geminiRpdLimit: Number(document.getElementById("cfg-gemini-rpd").value) || 250,
       geminiTpdLimit: Number(document.getElementById("cfg-gemini-tpd").value) || 1000000,

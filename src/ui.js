@@ -97,7 +97,7 @@ function costReport(usage, settings) {
     `Heimdall — custo estimado (tarifa paga; no free tier o real é US$ 0):\n` +
     `Hoje (US$ ${estimateCostUsd(usage.models || {}).toFixed(3)}):\n${lines(usage.models || {})}\n` +
     `Mês ${month} (US$ ${spent.toFixed(2)} / ${budget} · ${pct}%):\n${lines(monthModels)}\n` +
-    `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"}`
+    `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"} · classificador ${settings.geminiClassifierModel || "desligado"}`
   );
 }
 

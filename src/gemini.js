@@ -49,7 +49,7 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?") {
 }
 
 // Cascata: se o modelo pedido falhar por cota/sobrecarga, cai para fallbackModel.
-export async function callGemini({ apiKey, model, fallbackModel = null, systemPrompt, userMessage, contextPayload, usage }) {
+export async function callGemini({ apiKey, model, fallbackModel = null, systemPrompt, userMessage, contextPayload, usage, temperature = 0.82 }) {
   if (!apiKey) {
     throw new Error("Configure sua Gemini API Key em ⚙️ Configurações antes de jogar.");
   }
@@ -58,26 +58,23 @@ export async function callGemini({ apiKey, model, fallbackModel = null, systemPr
     ? `ESTADO ATUAL DO JOGO (JSON):\n${JSON.stringify(contextPayload)}\n\nENTRADA DO JOGADOR:\n${userMessage}`
     : userMessage;
 
-  const body = {
-    systemInstruction: {
-      parts: [{ text: systemPrompt }]
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: payloadText }]
-      }
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.82
-    }
+  // Gemma na API não aceita systemInstruction nem modo JSON: o prompt vai junto no texto.
+  const buildBody = (m) => {
+    const gemma = m.startsWith("gemma");
+    return {
+      ...(gemma ? {} : { systemInstruction: { parts: [{ text: systemPrompt }] } }),
+      contents: [{ role: "user", parts: [{ text: gemma ? `${systemPrompt}
+
+${payloadText}` : payloadText }] }],
+      generationConfig: { ...(gemma ? {} : { responseMimeType: "application/json" }), temperature }
+    };
   };
 
   const models = fallbackModel && fallbackModel !== model ? [model, fallbackModel] : [model];
   let res;
   let usedModel;
   for (usedModel of models) {
+    const body = buildBody(usedModel);
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(usedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     res = await fetch(endpoint, {
       method: "POST",

@@ -203,6 +203,14 @@
             </select>
           </div>
         </div>
+        <div class="form-group">
+          <label for="cfg-gemini-classifier">Classificador da cascata (decide se o turno é épico)</label>
+          <select id="cfg-gemini-classifier">
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemma-3-27b-it">gemma-3-27b-it (grátis)</option>
+            <option value="">Desligado (só a marca do turno anterior)</option>
+          </select>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label for="cfg-gemini-rpd">Limite diário (RPD)</label>

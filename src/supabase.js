@@ -1,4 +1,5 @@
 import { getAllChaptersLocal, saveChapterLocal, saveMediaLocal, todayKey } from "./state.js";
+import { sumModels } from "./config.js";
 
 export function isSupabaseConfigured(settings) {
   return Boolean(settings.supabaseUrl && settings.supabaseAnonKey && settings.slotId);
@@ -121,22 +122,22 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
     game.usage.dirtyMediaIds = [];
   }
 
-  await upsert(
-    settings,
-    "twd_usage",
-    "slot_id,day_key",
-    [
-      {
-        slot_id: slotId,
-        day_key: game.usage.dayKey || todayKey(),
-        gemini_requests: game.usage.geminiRequests || 0,
-        gemini_tokens: game.usage.geminiTokens || 0,
-        supabase_requests: game.usage.supabaseRequests || 0,
-        updated_at: now
-      }
-    ],
-    game.usage
-  );
+  const usageRow = {
+    slot_id: slotId,
+    day_key: game.usage.dayKey || todayKey(),
+    gemini_requests: game.usage.geminiRequests || 0,
+    gemini_tokens: game.usage.geminiTokens || 0,
+    supabase_requests: game.usage.supabaseRequests || 0,
+    models: game.usage.models || {},
+    updated_at: now
+  };
+  try {
+    await upsert(settings, "twd_usage", "slot_id,day_key", [usageRow], game.usage);
+  } catch {
+    // coluna "models" ainda não criada no SQL Editor: envia sem o custo por modelo
+    const { models, ...legacy } = usageRow;
+    await upsert(settings, "twd_usage", "slot_id,day_key", [legacy], game.usage);
+  }
 
   return true;
 }
@@ -244,20 +245,29 @@ export async function pullGameFromSupabase(settings, currentUsage, currentMediaC
     // Se twd_media ainda não foi criada no SQL Editor, não quebra o pull principal
   }
 
-  const day = encodeURIComponent(todayKey());
+  // Linhas do mês inteiro: hoje para as cotas do dia, a soma para o orçamento mensal (PC + celular).
+  const today = todayKey();
+  const month = today.slice(0, 7);
   const usageRows = await sbFetch(
     settings,
-    `twd_usage?slot_id=eq.${slot}&day_key=eq.${day}&select=*`,
+    `twd_usage?slot_id=eq.${slot}&day_key=like.${encodeURIComponent(month)}*&select=*`,
     { headers: headers(settings) },
     currentUsage
   );
-  const ur = usageRows?.[0];
+  const ur = (usageRows || []).find((r) => r.day_key === today);
+  const remoteHasModels = (usageRows || []).some((r) => r.models && Object.keys(r.models).length);
+  const sameDay = currentUsage.dayKey === today;
   const usage = {
-    dayKey: todayKey(),
-    geminiRequests: ur?.gemini_requests ?? currentUsage.geminiRequests ?? 0,
-    geminiTokens: Number(ur?.gemini_tokens ?? currentUsage.geminiTokens ?? 0),
+    dayKey: today,
+    geminiRequests: ur?.gemini_requests ?? (sameDay ? currentUsage.geminiRequests : 0) ?? 0,
+    geminiTokens: Number(ur?.gemini_tokens ?? (sameDay ? currentUsage.geminiTokens : 0) ?? 0),
     recentRequestTimestamps: currentUsage.recentRequestTimestamps || [],
     supabaseRequests: ur?.supabase_requests ?? currentUsage.supabaseRequests ?? 0,
+    models: ur?.models ?? (sameDay ? currentUsage.models : null) ?? {},
+    monthKey: month,
+    monthModels: remoteHasModels
+      ? sumModels(usageRows.map((r) => r.models))
+      : (currentUsage.monthKey === month ? currentUsage.monthModels : null) || {},
     estimatedBytes: 0,
     dirtyMediaIds: []
   };

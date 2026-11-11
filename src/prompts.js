@@ -1,3 +1,4 @@
+import { TURN_RULES } from "./rules.js";
 import { DEFAULT_ART_STYLE, PROGRESSION_MILESTONES } from "./config.js";
 import { fxKeys } from "./sensory.js";
 
@@ -214,6 +215,7 @@ REGRAS ESTRITAS DO ÁRBITRO:
    - musica: ${fx.musica.join(", ")}
    - haptico: ${fx.haptico.join(", ")}
 10. NARRADOR ÉPICO: "epico": true SOMENTE quando o PRÓXIMO turno for chefe, clímax, revelação maior ou morte iminente (o próximo turno usará um modelo mais caro). Nos demais, false.
+11. LIMITES POR TURNO (o código corta o excesso): xpDelta até ${TURN_RULES.maxXpFactor}× o xpToNext atual; setLevel no máximo +${TURN_RULES.maxLevelJump}; cada atributo ±${TURN_RULES.maxAttributeDelta}; hpMax/manaMax/staminaMax ±${TURN_RULES.maxPoolMaxDelta}. Progresso grande se divide em vários turnos.
 
 FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
 {
@@ -282,5 +284,19 @@ export function buildChapterSummaryPrompt(chapter) {
 Preserve TODOS os fatos permanentes: locais descobertos, NPCs conhecidos e atitudes/personalidades, evoluções de habilidade, projetos de engenharia, cicatrizes de sobrecarga, golens forjados, moedas/itens importantes, promessas e ganchos abertos.
 Retorne APENAS JSON: { "title": "Título curto do capítulo", "summary": "Resumo denso em 6 a 12 frases." }`,
     userPrompt: `Capítulo ${chapter.chapterNumber}:\n${transcript}`
+  };
+}
+
+// Classificador barato da cascata: decide se ESTE turno merece o narrador épico.
+export function buildClassifierPrompt(game, playerText) {
+  const p = game.core.player;
+  const last = game.activeChapter.turns.at(-1)?.narrative || "";
+  return {
+    systemPrompt: `Você classifica turnos de um RPG dark fantasy para escolher o modelo de IA.
+"epico": true SOMENTE se a ação do jogador levar a: luta contra chefe, clímax de arco, revelação maior, morte iminente ou forja/despertar de poder importante. Exploração, diálogo comum, compras, descanso e consultas = false.
+Responda APENAS JSON: {"epico": false}`,
+    userMessage: `Nível ${p.level} · HP ${p.hp}/${p.hpMax} · em cena: ${(game.core.nearbyActors || []).join(", ") || "ninguém"}
+Último trecho do mestre: ${last.slice(-400)}
+Ação do jogador: ${playerText}`
   };
 }

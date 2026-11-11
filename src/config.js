@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   geminiKey: "",
   geminiModel: "gemini-2.5-flash",
   geminiEpicModel: "gemini-2.5-pro", // "" = sem cascata
+  geminiClassifierModel: "gemini-2.5-flash-lite", // "" = só a marca "epico" do turno anterior decide
   monthlyBudgetUsd: 41,
   geminiRpdLimit: 250,
   geminiTpdLimit: 1000000,
@@ -47,8 +48,23 @@ export const MODEL_PRICES_USD = {
   "gemini-2.5-pro": { in: 1.25, out: 10 },
   "gemini-2.5-flash": { in: 0.3, out: 2.5 },
   "gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
-  "gemini-2.0-flash": { in: 0.1, out: 0.4 }
+  "gemini-2.0-flash": { in: 0.1, out: 0.4 },
+  "gemma-3-27b-it": { in: 0, out: 0 } // gratuito na API Gemini
 };
+
+// Soma vários buckets { modelo: {req,in,out} } (dias do mês vindos do twd_usage).
+export function sumModels(list) {
+  const total = {};
+  for (const models of list) {
+    for (const [name, m] of Object.entries(models || {})) {
+      const t = (total[name] ||= { req: 0, in: 0, out: 0 });
+      t.req += m.req || 0;
+      t.in += m.in || 0;
+      t.out += m.out || 0;
+    }
+  }
+  return total;
+}
 
 export function estimateCostUsd(models = {}) {
   return Object.entries(models).reduce((sum, [model, m]) => {

@@ -47,6 +47,8 @@ create table if not exists public.twd_usage (
   updated_at timestamptz not null default now(),
   primary key (slot_id, day_key)
 );
+-- Custo por modelo do dia ({ "gemini-2.5-pro": {req,in,out}, ... }) — rode também em bancos já criados
+alter table public.twd_usage add column if not exists models jsonb not null default '{}'::jsonb;
 
 -- Índices úteis para leitura rápida de capítulos
 create index if not exists idx_twd_chapters_slot_num
