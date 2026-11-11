@@ -1,0 +1,98 @@
+{
+  "bg": {
+    "gelo": "bg/gelo.webp",
+    "floresta": "bg/floresta.webp",
+    "ermo": "bg/ermo.webp",
+    "vale": "bg/vale.webp",
+    "castelo_gelo": "bg/castelo_gelo.webp"
+  },
+  "vfx": {
+    "neve": [
+      "vfx/neve_1.webp",
+      "vfx/neve_2.webp",
+      "vfx/neve_3.webp",
+      "vfx/neve_4.webp",
+      "vfx/neve_5.webp"
+    ],
+    "neve_floco": [
+      "vfx/neve_floco_1.webp",
+      "vfx/neve_floco_2.webp",
+      "vfx/neve_floco_3.webp",
+      "vfx/neve_floco_4.webp",
+      "vfx/neve_floco_5.webp",
+      "vfx/neve_floco_6.webp"
+    ],
+    "estrela": [
+      "vfx/estrela_1.webp",
+      "vfx/estrela_2.webp",
+      "vfx/estrela_3.webp"
+    ],
+    "poeira": [
+      "vfx/poeira_1.webp",
+      "vfx/poeira_2.webp"
+    ],
+    "vagalume": [
+      "vfx/vagalume_1.webp",
+      "vfx/vagalume_2.webp"
+    ],
+    "chuva": [
+      "vfx/chuva_1.webp"
+    ],
+    "corte_1": "vfx/corte_1.webp",
+    "corte_2": "vfx/corte_2.webp"
+  },
+  "sfx": {
+    "ui_click": "sfx/ui_click.ogg",
+    "ui_abrir": "sfx/ui_abrir.ogg",
+    "ui_fechar": "sfx/ui_fechar.ogg",
+    "ui_confirmar": "sfx/ui_confirmar.ogg",
+    "ui_erro": "sfx/ui_erro.ogg",
+    "ui_selecionar": "sfx/ui_selecionar.ogg",
+    "system_glitch": "sfx/system_glitch.ogg",
+    "qte_alerta": "sfx/qte_alerta.ogg",
+    "livro_abrir": "sfx/livro_abrir.ogg",
+    "livro_folhear": "sfx/livro_folhear.ogg",
+    "moedas": "sfx/moedas.ogg",
+    "lamina": "sfx/lamina.ogg",
+    "sacar_arma": "sfx/sacar_arma.ogg",
+    "porta": "sfx/porta.ogg",
+    "passos_neve": "sfx/passos_neve.ogg",
+    "soco": "sfx/soco.ogg",
+    "metal": "sfx/metal.ogg",
+    "gelo_quebra": "sfx/gelo_quebra.ogg",
+    "sino": "sfx/sino.ogg",
+    "passo_gigante": "sfx/passo_gigante.ogg",
+    "explosao": "sfx/explosao.ogg",
+    "magia_escudo": "sfx/magia_escudo.ogg",
+    "magia_fogo": "sfx/magia_fogo.ogg",
+    "mana_eco": "sfx/mana_eco.ogg",
+    "portal": "sfx/portal.ogg",
+    "dado": "sfx/dado.ogg",
+    "jingle_vitoria": "sfx/jingle_vitoria.ogg",
+    "jingle_derrota": "sfx/jingle_derrota.ogg",
+    "jingle_levelup": "sfx/jingle_levelup.ogg",
+    "voz_level_up": "sfx/voz_level_up.ogg",
+    "voz_game_over": "sfx/voz_game_over.ogg",
+    "voz_lutar": "sfx/voz_lutar.ogg",
+    "voz_prepare": "sfx/voz_prepare.ogg"
+  },
+  "music": {
+    "gelo_vento": "music/gelo_vento.ogg",
+    "floresta_sombria": "music/floresta_sombria.ogg",
+    "combate_chefe": "music/combate_chefe.ogg",
+    "santuario_deusa": "music/santuario_deusa.ogg",
+    "vazio_espacial": "music/vazio_espacial.ogg",
+    "masmorra": "music/masmorra.ogg",
+    "amb_nevasca": "music/amb_nevasca.ogg"
+  },
+  "icons": [
+    "icons/game",
+    "icons/gear",
+    "icons/items",
+    "icons/nature",
+    "icons/ui"
+  ],
+  "fonts": {
+    "pixel": "fonts/boldpixels.ttf"
+  }
+}

@@ -2,3 +2,8 @@
 Thumbs.db
 .vercel
 *.log
+
+# Arquivos brutos e pesados em ASSETS/ (GitHub rejeita arquivos >100 MB)
+ASSETS/*.zip
+ASSETS/*.7z
+ASSETS/_raw_extracted/
