@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS = {
   geminiModel: "gemini-3.5-flash-lite",
   geminiEpicModel: "gemini-3.8-flash", // "" = sem cascata
   geminiClassifierModel: "gemma-4-31b-it", // "" = só a marca "epico" do turno anterior decide
-  epicManualOnly: true, // Só aciona Narrador Épico via /epic (protege R$ 30)
+  epicManualOnly: false, // Sem trava: Gemma 4 fica na frente classificando e buscando memória (/epic ainda força)
   monthlyBudgetUsd: 5, // ~R$ 30 em dólares (teto da Chave Paga)
   geminiRpdLimit: 250,
   geminiTpdLimit: 1000000,

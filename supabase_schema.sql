@@ -145,3 +145,61 @@ alter table public.twd_user_settings enable row level security;
 drop policy if exists "twd_user_settings_owner" on public.twd_user_settings;
 create policy "twd_user_settings_owner" on public.twd_user_settings
   for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+
+-- ============================================================================
+-- FASE 6 — RAG Vetorial no Supabase (pgvector + gemini-embedding-001 768d)
+-- Rode este bloco quando quiser busca semântica instantânea em meses de capítulos.
+-- ============================================================================
+create extension if not exists vector;
+
+create table if not exists public.twd_memory_vectors (
+  slot_id text not null,
+  mem_id text not null,
+  kind text not null, -- 'npcs' | 'bestiary' | 'concepts' | 'chapter'
+  title text not null default '',
+  chapter_number integer,
+  content text not null,
+  embedding vector(768) not null,
+  owner uuid not null default auth.uid(),
+  updated_at timestamptz not null default now(),
+  primary key (slot_id, mem_id)
+);
+
+create index if not exists idx_twd_memory_vectors_hnsw
+  on public.twd_memory_vectors using hnsw (embedding vector_cosine_ops);
+
+alter table public.twd_memory_vectors enable row level security;
+
+drop policy if exists "twd_memory_vectors_owner" on public.twd_memory_vectors;
+create policy "twd_memory_vectors_owner" on public.twd_memory_vectors
+  for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+
+create or replace function public.match_twd_memory(
+  query_embedding vector(768),
+  p_slot_id text,
+  match_count integer default 6
+)
+returns table (
+  mem_id text,
+  kind text,
+  title text,
+  chapter_number integer,
+  content text,
+  similarity float
+)
+language sql
+stable
+security invoker
+as $$
+  select
+    v.mem_id,
+    v.kind,
+    v.title,
+    v.chapter_number,
+    v.content,
+    1 - (v.embedding <=> query_embedding) as similarity
+  from public.twd_memory_vectors v
+  where v.slot_id = p_slot_id
+  order by v.embedding <=> query_embedding
+  limit greatest(1, least(match_count, 12));
+$$;

@@ -103,7 +103,7 @@ function costReport(usage, settings) {
   const paidSpent = estimateCostUsd(paidModels);
   const freeRef = Math.max(0, estimateCostUsd(monthModels) - paidSpent);
   const pct = budget ? ((paidSpent / budget) * 100).toFixed(1) : "—";
-  const modeLabel = settings.epicManualOnly ? "Só com /epic" : "Auto em chefes";
+  const modeLabel = settings.epicManualOnly ? "Só com /epic" : "Gemma 4 na frente";
   const keysInfo = `APIs: Free ${settings.geminiKey ? "✓" : "—"} · Paga ${settings.geminiPaidKey ? "✓" : "usa Free"} · Épico: ${modeLabel}`;
   const dayUnlocked = Object.keys(usage.paidUnlocked?.[usage.dayKey] || {});
   const paidUnlockNote = dayUnlocked.length ? `Liberados na Paga hoje: ${dayUnlocked.join(", ")}\n` : "";

@@ -1,6 +1,7 @@
 import { TURN_RULES } from "./rules.js";
 import { DEFAULT_ART_STYLE, PROGRESSION_MILESTONES } from "./config.js";
 import { fxKeys } from "./sensory.js";
+import { buildCompactCatalogForRouter } from "./memory.js";
 
 function stripHeavyFields(obj) {
   return JSON.parse(
@@ -12,7 +13,7 @@ function stripHeavyFields(obj) {
   );
 }
 
-function extractMentionTokens(text) {
+export function extractMentionTokens(text) {
   const tokens = { actors: [], items: [], currencies: [], locations: [] };
   const matches = String(text || "").matchAll(/([@#$&])([^\s,;:.!?]+)/g);
   for (const m of matches) {
@@ -53,7 +54,7 @@ function findRelevantCompendium(game, userText, mentions) {
   };
 }
 
-export function buildContextPayload(game, userText, focusTarget = null) {
+export function buildContextPayload(game, userText, focusTarget = null, memoryBundle = null) {
   const sphere = game.spheres[game.core.meta.activeSphereId];
   const mentions = extractMentionTokens(userText);
   const pastSummaries = game.chaptersIndex
@@ -86,7 +87,9 @@ export function buildContextPayload(game, userText, focusTarget = null) {
     })),
     pastChaptersSummary: pastSummaries,
     recentTurns,
-    relevantCompendium: findRelevantCompendium(game, userText, mentions),
+    relevantCompendium: memoryBundle?.relevantCompendium || findRelevantCompendium(game, userText, mentions),
+    recalledTurns: memoryBundle?.recalledTurns?.length ? memoryBundle.recalledTurns : undefined,
+    vectorMemoryHits: memoryBundle?.vectorHits?.length ? memoryBundle.vectorHits : undefined,
     mentionsDetected: mentions,
     focusedHistory
   };
@@ -286,7 +289,8 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
   "chapterMeta": {
     "suggestedTitle": null
   }
-}`;
+}
+NOTA COMPÊNDIO (grafo de memória): ao criar/atualizar itens em compendiumUpdates, inclua quando útil "tags": [] e "links": ["Nome_Local_ou_NPC_relacionado"] para conectar o mundo.`;
 }
 
 export function buildChapterSummaryPrompt(chapter) {
@@ -302,16 +306,19 @@ Retorne APENAS JSON: { "title": "Título curto do capítulo", "summary": "Resumo
   };
 }
 
-// Classificador barato da cascata: decide se ESTE turno merece o narrador épico.
+// Roteador rápido na frente (Gemma 4 gratuito): decide épico + extrai termos/capítulos para memória longa.
 export function buildClassifierPrompt(game, playerText) {
   const p = game.core.player;
   const last = game.activeChapter.turns.at(-1)?.narrative || "";
+  const catalog = buildCompactCatalogForRouter(game);
   return {
-    systemPrompt: `Você classifica turnos de um RPG dark fantasy para poupar créditos pagos.
-"epico": true ESTRITAMENTE para luta contra CHEFE nomeado ou clímax final de arco. Combate comum, monstros comuns, exploração, diálogo, compras, treino e descanso = false.
-Responda APENAS JSON: {"epico": false}`,
+    systemPrompt: `Você é o roteador rápido de um RPG dark fantasy (roda antes do narrador para velocidade e memória precisa).
+1) "epico": true ESTRITAMENTE para luta contra CHEFE nomeado ou clímax final de arco. Combate comum, monstros comuns, exploração, diálogo, compras, treino e descanso = false.
+2) "searchTerms": lista de 0 a 6 nomes próprios, locais, monstros, objetos ou palavras-chave que o narrador precisa puxar da memória (inclua nomes do catálogo se o jogador fizer referência indireta, ex: "aquele ferreiro").
+3) "relevantChapters": lista de 0 a 2 números inteiros de capítulos fechados do catálogo relacionados à cena ou lembrança citada.
+Responda APENAS JSON: {"epico": false, "searchTerms": [], "relevantChapters": []}`,
     userMessage: `Nível ${p.level} · HP ${p.hp}/${p.hpMax} · em cena: ${(game.core.nearbyActors || []).join(", ") || "ninguém"}
-Último trecho do mestre: ${last.slice(-400)}
+${catalog ? `Catálogo do mundo:\n${catalog}\n` : ""}Último trecho do mestre: ${last.slice(-360)}
 Ação do jogador: ${playerText}`
   };
 }

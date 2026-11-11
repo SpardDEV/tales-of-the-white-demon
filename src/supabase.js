@@ -426,3 +426,29 @@ export async function pullUserSettingsFromSupabase(settings) {
   );
   return rows?.[0]?.settings || null;
 }
+
+export async function upsertMemoryVectors(settings, rows, usage = null) {
+  if (!isSupabaseConfigured(settings) || !rows?.length) return false;
+  const owner = sessionUserId();
+  const payload = rows.map((r) => ({ ...r, ...(owner ? { owner } : {}) }));
+  await upsert(settings, "twd_memory_vectors", "slot_id,mem_id", payload, usage);
+  return true;
+}
+
+export async function matchMemoryVectors(settings, queryEmbedding, matchCount = 5, usage = null) {
+  if (!isSupabaseConfigured(settings) || !Array.isArray(queryEmbedding)) return [];
+  return sbFetch(
+    settings,
+    "rpc/match_twd_memory",
+    {
+      method: "POST",
+      headers: headers(settings),
+      body: JSON.stringify({
+        query_embedding: queryEmbedding,
+        p_slot_id: settings.slotId.trim(),
+        match_count: matchCount
+      })
+    },
+    usage
+  );
+}

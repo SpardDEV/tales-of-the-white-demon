@@ -15,7 +15,7 @@ import {
   shouldRotateChapter,
   todayKey
 } from "./state.js";
-import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt, buildWebtoonPrompt } from "./prompts.js";
+import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt, buildWebtoonPrompt, extractMentionTokens } from "./prompts.js";
 import { enforceTurnRules } from "./rules.js";
 import { callGemini, listGeminiModels } from "./gemini.js";
 import {
@@ -33,6 +33,12 @@ import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
 import { speakMessage, stopTts } from "./tts.js";
+import {
+  indexMemoryInBackground,
+  reindexAllMemoryVectors,
+  retrieveRelevantMemory,
+  searchVectorMemory
+} from "./memory.js";
 import { applyFx, initSensory, isMuted, playMusic, setBiome, setMuted, startQte, updateStatusFx } from "./sensory.js";
 import {
   renderChatLog,
@@ -495,6 +501,7 @@ async function handleChapterRotationIfNeeded() {
       parsed.summary,
       parsed.title || `Capítulo ${game.activeChapter.chapterNumber}`
     );
+    indexMemoryInBackground({ settings, game, apiKey: freeGeminiKey(), closedChapter: closed });
     transientMessages.push({
       mode: "system",
       text: `☰ Capítulo ${closed.chapterNumber} arquivado na memória longa ("${closed.title}"). Novo capítulo iniciado!`
@@ -519,14 +526,51 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
 
   try {
     const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
-    const contextPayload = buildContextPayload(game, cmd.text, focusTarget);
+
+    // Gemma 4 na frente (classifica + busca memória) em paralelo com busca vetorial pgvector
+    const isActiveTurn = game.core.meta.phase === "active_game" && !negotiationAction;
+    const manualLock = settings.epicManualOnly === true;
+    const routerPromise =
+      isActiveTurn && settings.geminiClassifierModel && cmd.text && rawInput !== "__START_PROLOGUE__"
+        ? (() => {
+            const c = buildClassifierPrompt(game, cmd.text);
+            return callModelPreferFree({
+              model: settings.geminiClassifierModel,
+              roleLabel: "Roteador Gemma 4",
+              systemPrompt: c.systemPrompt,
+              userMessage: c.userMessage,
+              temperature: 0
+            })
+              .then((r) => r.parsed || {})
+              .catch((err) => {
+                console.warn("Roteador Gemma 4 falhou, seguindo com busca local:", err);
+                return {};
+              });
+          })()
+        : Promise.resolve({});
+
+    const vectorPromise =
+      isActiveTurn && rawInput !== "__START_PROLOGUE__"
+        ? searchVectorMemory({
+            settings,
+            queryText: cmd.text,
+            apiKey: freeGeminiKey(),
+            usage: game.usage
+          })
+        : Promise.resolve([]);
+
+    const [routerHints, vectorHits] = await Promise.all([routerPromise, vectorPromise]);
+    const memoryBundle = await retrieveRelevantMemory(
+      game,
+      cmd.text,
+      extractMentionTokens(cmd.text),
+      routerHints,
+      { settings, vectorHits }
+    );
+    const contextPayload = buildContextPayload(game, cmd.text, focusTarget, memoryBundle);
 
     // Cada modelo tenta sua cota Free primeiro; se UM modelo acabar a cota Free, avisa antes de liberar Paga só para ele.
-    const epicCandidate =
-      !!settings.geminiEpicModel &&
-      game.core.meta.phase === "active_game" &&
-      !negotiationAction;
-    const manualLock = settings.epicManualOnly !== false;
+    const epicCandidate = !!settings.geminiEpicModel && isActiveTurn;
     let epic = false;
     let epicBy = "";
     if (epicCandidate && cmd.forceEpic) {
@@ -536,21 +580,9 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       if (game.core.meta.nextEpic) {
         epic = true;
         epicBy = "marca do turno anterior";
-      } else if (settings.geminiClassifierModel && cmd.mode === "narrative") {
-        try {
-          const c = buildClassifierPrompt(game, cmd.text);
-          const { parsed: cls } = await callModelPreferFree({
-            model: settings.geminiClassifierModel,
-            roleLabel: "Classificador Rápido",
-            systemPrompt: c.systemPrompt,
-            userMessage: c.userMessage,
-            temperature: 0
-          });
-          epic = cls?.epico === true;
-          epicBy = "classificador";
-        } catch (err) {
-          console.warn("Classificador falhou, turno segue no modelo comum:", err);
-        }
+      } else if (cmd.mode === "narrative" && routerHints?.epico === true) {
+        epic = true;
+        epicBy = "Gemma 4 na frente";
       }
     }
     const chosenModel = epic ? settings.geminiEpicModel : settings.geminiModel;
@@ -594,6 +626,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       const cuts = cmd.mode === "world" ? [] : enforceTurnRules(parsed.statePatches, game.core.player);
       if (cuts.length) transientMessages.push({ mode: "system", text: `◈ Árbitro cortou o excesso: ${cuts.join(", ")}` });
       applyStatePatches(game, parsed.statePatches);
+      indexMemoryInBackground({ settings, game, apiKey: freeGeminiKey(), patches: parsed.statePatches });
     }
 
     applyFx(parsed);
@@ -722,7 +755,7 @@ function fillSettingsModalFields() {
   setSelectValue("cfg-gemini-classifier", settings.geminiClassifierModel ?? "gemma-4-31b-it");
   document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 5;
   const epManual = document.getElementById("cfg-epic-manual");
-  if (epManual) epManual.checked = settings.epicManualOnly !== false;
+  if (epManual) epManual.checked = settings.epicManualOnly === true;
   setSelectValue("cfg-tts-voice", settings.ttsVoice || "pt-BR-Neural2-B");
   const ttsKeyEl = document.getElementById("cfg-tts-key");
   if (ttsKeyEl) ttsKeyEl.value = settings.ttsKey || "";
@@ -965,6 +998,22 @@ function bindUI() {
   document.getElementById("btn-tts-breakdown")?.addEventListener("click", () => {
     document.getElementById("tts-breakdown-box")?.classList.toggle("hidden");
   });
+  document.getElementById("btn-rag-reindex")?.addEventListener("click", async (e) => {
+    const btnEl = e.currentTarget;
+    const prev = btnEl.textContent;
+    btnEl.disabled = true;
+    btnEl.textContent = "Indexando RAG...";
+    try {
+      const count = await reindexAllMemoryVectors({ settings, game, apiKey: freeGeminiKey() });
+      btnEl.textContent = `✓ ${count} vetores`;
+      setTimeout(() => { btnEl.textContent = prev; }, 2200);
+    } catch (err) {
+      btnEl.textContent = prev;
+      alert(`${err.message}\n\n(Se ainda não criou a tabela pgvector, rode o bloco FASE 6 do supabase_schema.sql no SQL Editor.)`);
+    } finally {
+      btnEl.disabled = false;
+    }
+  });
   document.getElementById("quota-strip").addEventListener("click", openSettingsModal);
   document.getElementById("btn-close-settings").addEventListener("click", () => {
     document.getElementById("settings-modal").classList.add("hidden");
@@ -980,7 +1029,7 @@ function bindUI() {
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
       geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,
-      epicManualOnly: document.getElementById("cfg-epic-manual")?.checked ?? true,
+      epicManualOnly: document.getElementById("cfg-epic-manual")?.checked ?? false,
       monthlyBudgetUsd: Number(document.getElementById("cfg-budget").value) || 0,
       geminiRpdLimit: Number(document.getElementById("cfg-gemini-rpd").value) || 250,
       geminiTpdLimit: Number(document.getElementById("cfg-gemini-tpd").value) || 1000000,

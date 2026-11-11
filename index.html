@@ -253,8 +253,8 @@
           <input id="cfg-budget" type="number" min="0" step="0.5" value="5" />
         </div>
         <label class="check-row" for="cfg-epic-manual">
-          <input id="cfg-epic-manual" type="checkbox" checked />
-          <span>🛡 Economia máxima: só chamar Narrador Épico quando eu digitar <code>/epic</code></span>
+          <input id="cfg-epic-manual" type="checkbox" />
+          <span>🛡 Trava manual: só usar Narrador Épico com <code>/epic</code> (desmarcado = Gemma 4 decide na frente)</span>
         </label>
 
         <div class="form-row">
@@ -307,7 +307,8 @@
               <label for="cfg-slot-id">Slot ID da Campanha (segredo p/ sincronizar PC ↔ Celular)</label>
               <input id="cfg-slot-id" type="text" placeholder="white-demon-01" />
             </div>
-            <div class="btn-row" style="justify-content:flex-end;">
+            <div class="btn-row" style="justify-content:flex-end;gap:6px;flex-wrap:wrap;">
+              <button id="btn-rag-reindex" type="button" class="btn btn-ghost btn-sm" title="Indexa capítulos fechados e compêndio no RAG pgvector do Supabase">◈ Indexar RAG</button>
               <button id="btn-copy-connect-link" type="button" class="btn btn-ghost btn-sm">🔗 Copiar Link de Conexão (PC → Celular)</button>
             </div>
           </div>
