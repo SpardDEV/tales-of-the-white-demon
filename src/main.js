@@ -2,6 +2,7 @@ import {
   applyStatePatches,
   clearAllLocal,
   createInitialGameData,
+  createTestGameData,
   loadGameDataLocal,
   loadSettings,
   persistGameDataLocal,
@@ -319,8 +320,8 @@ function refreshAllViews() {
 }
 
 async function syncIfConfigured(fullSync = false) {
-  if (!isSupabaseConfigured(settings)) {
-    setSyncBadge("Local", "badge-muted");
+  if (!isSupabaseConfigured(settings) || game.core.meta.isTest) {
+    setSyncBadge(game.core.meta.isTest ? "Teste" : "Local", "badge-muted");
     return;
   }
   try {
@@ -753,6 +754,7 @@ function bindUI() {
   });
 
   document.getElementById("btn-sb-push").addEventListener("click", async () => {
+    if (game.core.meta.isTest) return alert("Modo Teste não vai para a nuvem. Reinicie a jornada para jogar de verdade.");
     try {
       setSyncBadge("Enviando...", "badge-warn");
       await syncTurnToSupabase(settings, game, { fullSync: true });
@@ -810,6 +812,17 @@ function bindUI() {
     }
   });
 
+  document.getElementById("btn-test-game").addEventListener("click", async () => {
+    if (!confirm("Modo Teste: substitui o jogo local por uma masmorra de teste (não vai para a nuvem). Continuar?")) return;
+    await clearAllLocal();
+    game = createTestGameData();
+    viewingSphereId = game.core.meta.activeSphereId;
+    transientMessages = [];
+    await persistGameDataLocal(game);
+    refreshAllViews();
+    document.getElementById("settings-modal").classList.add("hidden");
+    if (settings.geminiKey) await sendTurn("Acordo zonzo no chão frio da masmorra. O que vejo ao meu redor?");
+  });
   document.getElementById("btn-new-game").addEventListener("click", async () => {
     if (!confirm("Isso apagará o progresso local atual e iniciará uma nova jornada do Prólogo. Continuar?")) {
       return;

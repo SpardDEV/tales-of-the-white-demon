@@ -795,3 +795,73 @@ export async function rotateChapter(game, summaryText, nextTitle = "") {
   await persistGameDataLocal(game);
   return closed;
 }
+
+// Modo Teste: pula o prólogo e larga o jogador numa masmorra com um NPC. Não sincroniza com a nuvem.
+export function createTestGameData() {
+  const game = createInitialGameData();
+  const { core } = game;
+  core.meta.phase = "active_game";
+  core.meta.isTest = true;
+  core.player.name = "Engenheiro (Teste)";
+  core.player.armor = 3;
+  core.player.statusEffects = ["Zonzo (acordou de uma queda)"];
+  core.patronDeity = { name: "Deusa Velada", domain: "Gelo e Preservação", disposition: "Curiosa", bond: 10, notes: "Perfil de teste." };
+  core.magicSystem = {
+    source: "Mana é calor latente do ambiente que a alma consegue mover.",
+    laws: [
+      "Congelar exige retirar calor: o calor sai por algum lugar (mãos, ar, alvo).",
+      "Quanto mais longe e mais rápido, mais mana e menos precisão.",
+      "Mana usada além do limite queima os canais do corpo."
+    ],
+    costs: "Mana proporcional à massa e à distância; estamina para precisão fina.",
+    limits: "Sobrecarga causa queimadura de canal e tontura.",
+    schools: ["Criocinese", "Construção com mana"]
+  };
+  core.skills = [
+    {
+      id: "skill_cryo_seed",
+      name: "Semente Criogênica",
+      tier: "F",
+      level: 1,
+      currentScope: "Congelar superfícies ao toque e lançar estilhaços de gelo a curta distância.",
+      hardLimits: "Até ~3 m; estilhaços do tamanho de pregos; 5 mana por uso.",
+      evolutionNorth: ["Lança de Gelo", "Estase de Objetos"],
+      devLog: []
+    }
+  ];
+  core.quests.active = [
+    { id: "q_test", title: "Sair da Masmorra Rachada", description: "Encontre a saída antes que a coisa nas profundezas acorde.", status: "active" }
+  ];
+  core.nearbyActors = ["Kaelen"];
+  game.compendium.npcs = [
+    {
+      id: "npc_kaelen",
+      name: "Kaelen",
+      personality: "Mercenária cínica, sobrevivente, fala pouco e cobra tudo.",
+      relationship: "Desconfiada — acabou de te encontrar caído.",
+      appearance: "Mulher de cabelo curto grisalho, armadura de couro remendada, besta pesada nas costas, cicatriz no queixo."
+    }
+  ];
+  const sphere = game.spheres[core.meta.activeSphereId];
+  sphere.name = "Esfera de Teste";
+  sphere.lawsSummary = "Mundo de teste para playtest de combate.";
+  sphere.nodes = [
+    {
+      id: "node_001",
+      name: "Masmorra Rachada — 1º Nível",
+      region: "Profundezas",
+      lat: 10,
+      lon: 20,
+      terrain: "ruin",
+      asciiGlyph: "▼",
+      dangerRank: "E",
+      discovered: true,
+      summary: "Corredores de pedra úmida, ossos antigos e marcas de garras no teto.",
+      portalToSphereId: null,
+      connectedTo: []
+    }
+  ];
+  game.chaptersIndex[0].title = "Teste: A Masmorra Rachada";
+  game.activeChapter.title = "Teste: A Masmorra Rachada";
+  return game;
+}
