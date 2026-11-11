@@ -300,3 +300,19 @@ Responda APENAS JSON: {"epico": false}`,
 Ação do jogador: ${playerText}`
   };
 }
+
+// Fase 5.6 — roteiro Webtoon: chamada separada, só o texto do capítulo + elenco.
+export const WEBTOON_PAGES = 60;
+export function buildWebtoonPrompt(chapter, cast, artStyle = "") {
+  const transcript = chapter.turns
+    .map((t) => (t.user ? `Jogador: ${t.user}\n` : "") + `Mestre: ${t.narrative}`)
+    .join("\n---\n");
+  return {
+    systemPrompt: `Você é roteirista de Webtoon vertical (rolagem 9:16). Adapte o capítulo em EXATAMENTE ${WEBTOON_PAGES} páginas, em ordem, cobrindo início, meio e fim sem inventar fatos.
+Cada página: 1 prompt de imagem em inglês, visual e autossuficiente (enquadramento, ação, cenário, luz, emoção), sem texto/balões na imagem. Estilo: ${artStyle || "dark fantasy comic-ink"}.
+"characters" lista SÓ os ids do elenco que aparecem na página (use [] se nenhum). Ids válidos:
+${cast.map((c) => `- ${c.id}: ${c.name}`).join("\n") || "- (nenhum)"}
+Retorne APENAS JSON: {"pages":[{"page":1,"prompt":"...","characters":["player"]}]}`,
+    userMessage: `Capítulo ${chapter.chapterNumber} — ${chapter.title || ""}\n${transcript}`
+  };
+}

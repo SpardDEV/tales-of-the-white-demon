@@ -95,6 +95,36 @@ function upsert(settings, table, conflictCols, rows, usage) {
   );
 }
 
+function chapterRow(slotId, ch, now) {
+  return {
+    slot_id: slotId,
+    chapter_id: ch.chapterId,
+    chapter_number: ch.chapterNumber,
+    title: ch.title || "",
+    summary: ch.summary || "",
+    turns: ch.turns || [],
+    turn_count: ch.turnCount || 0,
+    is_closed: Boolean(ch.isClosed),
+    updated_at: now,
+    // só manda a coluna quando existe: sem o SQL da Fase 5.6 o sync comum continua funcionando
+    ...(ch.webtoonPrompts ? { webtoon_prompts: ch.webtoonPrompts } : {})
+  };
+}
+
+// PostgREST exige as mesmas chaves em todas as linhas de um lote: separa quem tem webtoon.
+async function upsertChapters(settings, slotId, chapters, now, usage) {
+  const rows = chapters.map((ch) => chapterRow(slotId, ch, now));
+  for (const group of [rows.filter((r) => !r.webtoon_prompts), rows.filter((r) => r.webtoon_prompts)]) {
+    if (group.length) await upsert(settings, "twd_chapters", "slot_id,chapter_id", group, usage);
+  }
+}
+
+export async function pushChapterToSupabase(settings, chapter, usage) {
+  if (!isSupabaseConfigured(settings)) return false;
+  await upsertChapters(settings, settings.slotId.trim(), [chapter], new Date().toISOString(), usage);
+  return true;
+}
+
 export async function syncTurnToSupabase(settings, game, { fullSync = false } = {}) {
   if (!isSupabaseConfigured(settings)) return false;
   const slotId = settings.slotId.trim();
@@ -136,20 +166,7 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
   const chaptersToPush = fullSync
     ? await getAllChaptersLocal()
     : [game.activeChapter];
-  const chapterRows = chaptersToPush.filter(Boolean).map((ch) => ({
-    slot_id: slotId,
-    chapter_id: ch.chapterId,
-    chapter_number: ch.chapterNumber,
-    title: ch.title || "",
-    summary: ch.summary || "",
-    turns: ch.turns || [],
-    turn_count: ch.turnCount || 0,
-    is_closed: Boolean(ch.isClosed),
-    updated_at: now
-  }));
-  if (chapterRows.length) {
-    await upsert(settings, "twd_chapters", "slot_id,chapter_id", chapterRows, game.usage);
-  }
+  await upsertChapters(settings, slotId, chaptersToPush.filter(Boolean), now, game.usage);
 
   // Upload diferencial apenas das mídias novas/alteradas (ou todas no fullSync)
   const mediaIdsToPush = fullSync
@@ -259,7 +276,8 @@ export async function pullGameFromSupabase(settings, currentUsage, currentMediaC
         summary: ar.summary,
         turns: ar.turns || [],
         turnCount: ar.turn_count,
-        isClosed: ar.is_closed
+        isClosed: ar.is_closed,
+        webtoonPrompts: ar.webtoon_prompts || null
       }
     : {
         chapterId: core.meta.activeChapterId,
@@ -343,7 +361,8 @@ export async function fetchChapterOnDemand(settings, chapterId, usage) {
     summary: ar.summary,
     turns: ar.turns || [],
     turnCount: ar.turn_count,
-    isClosed: ar.is_closed
+    isClosed: ar.is_closed,
+    webtoonPrompts: ar.webtoon_prompts || null
   };
   await saveChapterLocal(chapter);
   return chapter;

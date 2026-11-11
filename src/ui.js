@@ -508,23 +508,81 @@ export async function renderCompendium(game, settings, activeSubtab, query = "",
               <div class="muted">Turnos: ${c.turnCount}</div>
               <p style="font-size:0.84rem;margin:6px 0;">${esc(c.summary || "Capítulo em andamento...")}</p>
               <button class="btn btn-ghost btn-sm btn-read-chapter" data-ch="${esc(c.chapterId)}">✧ Ler Turnos</button>
+              ${c.isClosed ? `<button class="btn btn-ghost btn-sm btn-webtoon" data-ch="${esc(c.chapterId)}">🎞 Webtoon</button>` : ""}
               <div id="ch-preview-${esc(c.chapterId)}" style="margin-top:8px;"></div>
             </div>`
           )
           .join("")
       : `<div class="card"><div class="muted">Nenhum capítulo registrado.</div></div>`;
 
+    const loadChapter = async (chId) =>
+      chId === game.activeChapter.chapterId
+        ? game.activeChapter
+        : (await getChapterLocal(chId)) ||
+          (await fetchChapterOnDemand(settings, chId, game.usage).catch(() => null));
+
+    // Fase 5.6: 60 prompts de página; cada página mostra a arte de referência do elenco.
+    const cast = { player: game.core.player };
+    for (const n of game.compendium.npcs || []) cast[n.id || n.name] = n;
+    el.querySelectorAll(".btn-webtoon").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const target = document.getElementById(`ch-preview-${btn.dataset.ch}`);
+        const ch = await loadChapter(btn.dataset.ch);
+        if (!ch?.turns?.length) {
+          target.innerHTML = `<span class="muted">Sem turnos salvos para este capítulo.</span>`;
+          return;
+        }
+        let pages = ch.webtoonPrompts;
+        if (!pages?.length) {
+          target.innerHTML = `<span class="muted">Roteirizando ${ch.turns.length} turnos em páginas...</span>`;
+          btn.disabled = true;
+          try {
+            pages = await handlers.onGenerateWebtoon(ch);
+          } catch (err) {
+            target.innerHTML = `<span class="muted">Falha no Webtoon: ${esc(err.message)}</span>`;
+            return;
+          } finally {
+            btn.disabled = false;
+          }
+        }
+        target.innerHTML = pages
+          .map((p, i) => {
+            const refs = p.characters.map((id) => cast[id]).filter(Boolean);
+            return `<div style="border-top:1px solid var(--border);padding:6px 0;font-size:0.8rem;">
+              <div style="color:var(--ice);">Pág. ${p.page}</div>
+              <div style="margin:3px 0;white-space:pre-wrap;">${esc(p.prompt)}</div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                ${refs
+                  .map((r) => {
+                    const url = resolveMediaUrl(game, r);
+                    return url
+                      ? `<img src="${url}" alt="${esc(r.name || "")}" title="${esc(r.name || "")}" style="height:48px;aspect-ratio:9/16;object-fit:cover;border:1px solid var(--border);" />`
+                      : `<span class="muted">${esc(r.name || "?")} (sem arte)</span>`;
+                  })
+                  .join("")}
+                <button class="btn btn-ghost btn-sm btn-webtoon-copy" data-i="${i}">⧉ Copiar</button>
+              </div>
+            </div>`;
+          })
+          .join("");
+        target.querySelectorAll(".btn-webtoon-copy").forEach((b) => {
+          b.addEventListener("click", () => {
+            const p = pages[Number(b.dataset.i)];
+            const names = p.characters.map((id) => cast[id]?.name).filter(Boolean);
+            handlers.onShowPromptText?.(
+              p.prompt + (names.length ? `\n\nReference art attached for: ${names.join(", ")}.` : "")
+            );
+          });
+        });
+      });
+    });
+
     el.querySelectorAll(".btn-read-chapter").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const chId = btn.dataset.ch;
         const target = document.getElementById(`ch-preview-${chId}`);
         target.innerHTML = `<span class="muted">Carregando...</span>`;
-        let ch = chId === game.activeChapter.chapterId
-          ? game.activeChapter
-          : await getChapterLocal(chId);
-        if (!ch) {
-          ch = await fetchChapterOnDemand(settings, chId, game.usage).catch(() => null);
-        }
+        const ch = await loadChapter(chId);
         if (!ch || !ch.turns?.length) {
           target.innerHTML = `<span class="muted">Sem turnos salvos localmente para este capítulo.</span>`;
           return;

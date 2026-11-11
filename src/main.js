@@ -8,15 +8,16 @@ import {
   popUndoSnapshot,
   pushUndoSnapshot,
   rotateChapter,
+  saveChapterLocal,
   saveMediaLocal,
   saveSettings,
   shouldRotateChapter,
   todayKey
 } from "./state.js";
-import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt } from "./prompts.js";
+import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, buildSystemPrompt, buildWebtoonPrompt } from "./prompts.js";
 import { enforceTurnRules } from "./rules.js";
 import { callGemini } from "./gemini.js";
-import { isSupabaseConfigured, pullGameFromSupabase, syncTurnToSupabase, signInSupabase, signOutSupabase, supabaseUserEmail } from "./supabase.js";
+import { isSupabaseConfigured, pullGameFromSupabase, pushChapterToSupabase, syncTurnToSupabase, signInSupabase, signOutSupabase, supabaseUserEmail } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
@@ -111,6 +112,37 @@ const uiHandlers = {
     } catch (err) {
       alert(`Falha ao processar cena: ${err.message}`);
     }
+  },
+  // Fase 5.6: gera os prompts de página uma vez e guarda no capítulo (imagens só sob demanda).
+  onGenerateWebtoon: async (chapter) => {
+    const cast = [
+      { id: "player", name: game.core.player.name },
+      ...game.compendium.npcs.map((n) => ({ id: n.id || n.name, name: n.name || n.id }))
+    ];
+    const { systemPrompt, userMessage } = buildWebtoonPrompt(chapter, cast, settings.artStylePrompt);
+    const { parsed } = await callGemini({
+      apiKey: settings.geminiKey,
+      model: settings.geminiModel,
+      systemPrompt,
+      userMessage,
+      contextPayload: null,
+      usage: game.usage,
+      temperature: 0.7
+    });
+    const ids = new Set(cast.map((c) => c.id));
+    const pages = (Array.isArray(parsed.pages) ? parsed.pages : [])
+      .filter((p) => p && typeof p.prompt === "string" && p.prompt.trim())
+      .map((p, i) => ({
+        page: i + 1,
+        prompt: p.prompt.trim(),
+        characters: (Array.isArray(p.characters) ? p.characters : []).filter((id) => ids.has(id))
+      }));
+    if (!pages.length) throw new Error("A IA não devolveu páginas de Webtoon.");
+    chapter.webtoonPrompts = pages;
+    await saveChapterLocal(chapter);
+    await persistGameDataLocal(game); // grava o uso do Gemini
+    await pushChapterToSupabase(settings, chapter, game.usage).catch((err) => console.warn("Webtoon sem sync:", err));
+    return pages;
   },
   onFocusChat: async (focusTarget, text) => {
     switchTab("chat");

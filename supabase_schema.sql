@@ -123,3 +123,9 @@ begin
     execute format('create policy %I on public.%I for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid())', t || '_owner', t);
   end loop;
 end $$;
+
+-- ============================================================================
+-- FASE 5.6 — Webtoon: 60 prompts de página por capítulo
+-- [{ page, prompt, characters: [ids do compendium/"player"] }]
+-- ============================================================================
+alter table public.twd_chapters add column if not exists webtoon_prompts jsonb;
