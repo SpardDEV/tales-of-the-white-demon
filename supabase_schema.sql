@@ -78,3 +78,23 @@ create policy "twd_chapters_all" on public.twd_chapters for all using (true) wit
 
 drop policy if exists "twd_usage_all" on public.twd_usage;
 create policy "twd_usage_all" on public.twd_usage for all using (true) with check (true);
+
+-- ============================================================================
+-- Tabela diferencial de Imagens WebP 9:16 (rode este bloco no SQL Editor)
+-- Permite baixar apenas imagens novas ao sincronizar PC <-> Celular.
+-- ============================================================================
+create table if not exists public.twd_media (
+  slot_id text not null,
+  media_id text not null,
+  webp_data text not null,
+  updated_at timestamptz not null default now(),
+  primary key (slot_id, media_id)
+);
+
+create index if not exists idx_twd_media_updated
+  on public.twd_media (slot_id, updated_at desc);
+
+alter table public.twd_media enable row level security;
+
+drop policy if exists "twd_media_all" on public.twd_media;
+create policy "twd_media_all" on public.twd_media for all using (true) with check (true);

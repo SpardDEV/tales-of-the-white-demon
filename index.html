@@ -67,9 +67,17 @@
           </div>
         </div>
 
+        <!-- MENTION AUTOCOMPLETE (@ # $ &) -->
+        <div id="mention-popover" class="mention-popover hidden"></div>
+
         <!-- COMMAND CHIPS + INPUT -->
         <div class="composer">
           <div class="cmd-chips">
+            <button id="btn-undo-turn" class="chip chip-warn hidden" title="Desfazer último turno">↶ Desfazer</button>
+            <button class="chip chip-mention" data-mention="@" title="Referenciar NPC/Golem/Pet">@</button>
+            <button class="chip chip-mention" data-mention="#" title="Puxar item do inventário">#</button>
+            <button class="chip chip-mention" data-mention="$" title="Puxar moeda/recurso">$</button>
+            <button class="chip chip-mention" data-mention="&" title="Puxar local descoberto">&amp;</button>
             <button class="chip" data-cmd="/pray " title="Falar com a Deusa Patrona"><i class="mono-icon">☽</i> /pray</button>
             <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo"><i class="mono-icon">⌖</i> /world</button>
             <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar"><i class="mono-icon">❖</i> /system</button>

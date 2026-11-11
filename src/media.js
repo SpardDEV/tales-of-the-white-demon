@@ -83,6 +83,16 @@ export function buildChatGptPrompt(entityType, entity, artStyle = DEFAULT_ART_ST
     );
   }
 
+  if (entityType === "keyItem") {
+    return (
+      `Generate an image in vertical 9:16 aspect ratio.\n` +
+      `Style: ${style}.\n` +
+      `Subject (Dark Fantasy Artifact / Weapon): "${entity.name}"${entity.rarity ? ` [${entity.rarity}]` : ""}.\n` +
+      `Visual details: ${entity.appearance || entity.description || "ornate cryogenic dark-fantasy relic forged with glowing ice runes"}.\n` +
+      `Composition: dramatic vertical item showcase floating against a pure pitch-black background with cold cyan mist.`
+    );
+  }
+
   const facts = Array.isArray(entity.knownFacts) ? entity.knownFacts.join("; ") : "";
   return (
     `Generate an image in vertical 9:16 aspect ratio.\n` +

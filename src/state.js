@@ -1,9 +1,14 @@
-import { CHAPTER_MAX_TURNS, computeRankFromLevel, DEFAULT_SETTINGS, PROTAGONIST_APPEARANCE_BASE } from "./config.js";
+import {
+  CHAPTER_MAX_TURNS,
+  computeRankFromLevel,
+  DEFAULT_SETTINGS,
+  PROTAGONIST_APPEARANCE_BASE
+} from "./config.js";
 
 const DB_NAME = "twd_infinite_rpg_v1";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SETTINGS_KEY = "twd_local_settings_v1";
-const MEM_FALLBACK = { kv: new Map(), chapters: new Map() };
+const MEM_FALLBACK = { kv: new Map(), chapters: new Map(), media: new Map() };
 
 export function loadSettings() {
   try {
@@ -18,7 +23,7 @@ export function saveSettings(settings) {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    // fallback silencioso se storage estiver bloqueado
+    // fallback silencioso
   }
 }
 
@@ -32,8 +37,8 @@ export function createInitialGameData() {
   return {
     core: {
       meta: {
-        version: 1,
-        phase: "prologue_world", // 'prologue_world' | 'prologue_deity' | 'active_game'
+        version: 2,
+        phase: "prologue_world",
         prologueQuestionCount: 0,
         prologueTargetMin: 15,
         prologueTargetMax: 30,
@@ -42,13 +47,14 @@ export function createInitialGameData() {
         activeChapterNumber: 1,
         activeSphereId: sphereId,
         activeNodeId: "node_001",
-        totalTurns: 0
+        totalTurns: 0,
+        lastMediaSyncAt: null
       },
       player: {
         name: "Engenheiro (Sem Nome)",
         origin: "Engenheiro da Terra (Recém-reencarnado)",
         appearance: PROTAGONIST_APPEARANCE_BASE,
-        imageWebp: null,
+        mediaId: null,
         level: 1,
         rank: "F",
         customRankTypology: null,
@@ -68,6 +74,7 @@ export function createInitialGameData() {
           controle_precisao: 15,
           mente_engenharia: 18
         },
+        currencies: [],
         bodyModifications: [],
         titles: ["Alma Deslocada"],
         statusEffects: []
@@ -88,9 +95,10 @@ export function createInitialGameData() {
         lastRemarks: []
       },
       skills: [],
+      projects: [],
       golems: {
         maxSlots: 7,
-        items: [] // { id, name, rank, coreType, selfSustainingMana, manaPool, role, status }
+        items: []
       },
       spatialPocket: {
         unlocked: false,
@@ -105,11 +113,16 @@ export function createInitialGameData() {
         name: null,
         species: null,
         rank: null,
+        personality: "",
+        appearance: "",
+        mediaId: null,
         bond: 0,
         abilities: [],
         notes: ""
       },
+      keyItems: [],
       inventory: [],
+      nearbyActors: [],
       quests: {
         active: [],
         completed: []
@@ -129,6 +142,7 @@ export function createInitialGameData() {
           {
             id: "node_001",
             name: "Vazio Liminar",
+            region: "Limiar",
             lat: 0,
             lon: 0,
             terrain: "void",
@@ -136,6 +150,7 @@ export function createInitialGameData() {
             dangerRank: "N/A",
             discovered: true,
             summary: "Ponto de transição entre a morte na Terra e o despertar.",
+            portalToSphereId: null,
             connectedTo: []
           }
         ]
@@ -171,13 +186,15 @@ export function createInitialGameData() {
       geminiTokens: 0,
       recentRequestTimestamps: [],
       supabaseRequests: 0,
-      estimatedBytes: 0
-    }
+      estimatedBytes: 0,
+      dirtyMediaIds: []
+    },
+    mediaCache: {} // { [mediaId]: { mediaId, webpData, updatedAt } } — não é serializado em core/compendium!
   };
 }
 
 // ============================================================================
-// IndexedDB Persistence (local offline mirror + partitioned chapters)
+// IndexedDB Persistence (local offline mirror + partitioned chapters & media)
 // ============================================================================
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -190,6 +207,7 @@ function openDB() {
       const db = req.result;
       if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
       if (!db.objectStoreNames.contains("chapters")) db.createObjectStore("chapters", { keyPath: "chapterId" });
+      if (!db.objectStoreNames.contains("media")) db.createObjectStore("media", { keyPath: "mediaId" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -230,7 +248,7 @@ async function kvSet(key, val) {
     try {
       localStorage.setItem(`twd_kv_${key}`, JSON.stringify(val));
     } catch {
-      // mantém em memória se localStorage também falhar
+      // mantém em memória
     }
   }
 }
@@ -288,15 +306,53 @@ export async function getAllChaptersLocal() {
   }
 }
 
-export async function clearAllLocal() {
-  MEM_FALLBACK.kv.clear();
-  MEM_FALLBACK.chapters.clear();
+export async function saveMediaLocal(mediaId, webpData, updatedAt = new Date().toISOString()) {
+  const item = { mediaId, webpData, updatedAt };
+  MEM_FALLBACK.media.set(mediaId, item);
   try {
     const db = await openDB();
     await new Promise((resolve, reject) => {
-      const tx = db.transaction(["kv", "chapters"], "readwrite");
+      const tx = db.transaction("media", "readwrite");
+      tx.objectStore("media").put(item);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // fallback em memória se localStorage não comportar blob
+  }
+  return item;
+}
+
+export async function getAllMediaLocal() {
+  try {
+    const db = await openDB();
+    const list = await new Promise((resolve, reject) => {
+      const tx = db.transaction("media", "readonly");
+      const req = tx.objectStore("media").getAll();
+      req.onsuccess = () => resolve(req.result ?? []);
+      req.onerror = () => reject(req.error);
+    });
+    const map = {};
+    for (const item of list) map[item.mediaId] = item;
+    return map;
+  } catch {
+    const map = {};
+    for (const [k, v] of MEM_FALLBACK.media.entries()) map[k] = v;
+    return map;
+  }
+}
+
+export async function clearAllLocal() {
+  MEM_FALLBACK.kv.clear();
+  MEM_FALLBACK.chapters.clear();
+  MEM_FALLBACK.media.clear();
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["kv", "chapters", "media"], "readwrite");
       tx.objectStore("kv").clear();
       tx.objectStore("chapters").clear();
+      tx.objectStore("media").clear();
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -311,13 +367,26 @@ export async function clearAllLocal() {
   }
 }
 
+function migrateLegacyCore(core) {
+  const base = createInitialGameData().core;
+  core.meta = { ...base.meta, ...(core.meta || {}), version: 2 };
+  core.player = { ...base.player, ...(core.player || {}) };
+  if (!Array.isArray(core.player.currencies)) core.player.currencies = [];
+  if (!Array.isArray(core.projects)) core.projects = [];
+  if (!Array.isArray(core.keyItems)) core.keyItems = [];
+  if (!Array.isArray(core.nearbyActors)) core.nearbyActors = [];
+  core.skills = (core.skills || []).map((s) => ({ devLog: [], ...s }));
+  return core;
+}
+
 export async function loadGameDataLocal() {
-  const core = await kvGet("core");
+  let core = await kvGet("core");
   if (!core) {
     const fresh = createInitialGameData();
     await persistGameDataLocal(fresh);
     return fresh;
   }
+  core = migrateLegacyCore(core);
   const spheres = (await kvGet("spheres")) || createInitialGameData().spheres;
   const compendium = (await kvGet("compendium")) || { npcs: [], bestiary: [], concepts: [] };
   const chaptersIndex = (await kvGet("chaptersIndex")) || [];
@@ -331,11 +400,14 @@ export async function loadGameDataLocal() {
       recentRequestTimestamps: []
     };
   }
+  if (!Array.isArray(usage.dirtyMediaIds)) usage.dirtyMediaIds = [];
+
   const activeChapter =
     (await getChapterLocal(core.meta.activeChapterId)) ||
     createInitialGameData().activeChapter;
+  const mediaCache = await getAllMediaLocal();
 
-  return { core, spheres, compendium, chaptersIndex, activeChapter, usage };
+  return { core, spheres, compendium, chaptersIndex, activeChapter, usage, mediaCache };
 }
 
 export async function persistGameDataLocal(game) {
@@ -350,17 +422,55 @@ export async function persistGameDataLocal(game) {
 
 export function estimateBytesSize(game) {
   try {
-    const sample = JSON.stringify({
-      core: game.core,
-      spheres: game.spheres,
-      compendium: game.compendium,
-      chaptersIndex: game.chaptersIndex,
-      activeChapter: game.activeChapter
-    });
-    return new Blob([sample]).size;
+    const jsonBytes = new Blob([
+      JSON.stringify({
+        core: game.core,
+        spheres: game.spheres,
+        compendium: game.compendium,
+        chaptersIndex: game.chaptersIndex,
+        activeChapter: game.activeChapter
+      })
+    ]).size;
+    let mediaBytes = 0;
+    for (const m of Object.values(game.mediaCache || {})) {
+      mediaBytes += m?.webpData?.length || 0;
+    }
+    return jsonBytes + mediaBytes;
   } catch {
     return 0;
   }
+}
+
+// ============================================================================
+// Undo Snapshots (in-memory up to 5 recent turns)
+// ============================================================================
+const UNDO_STACK = [];
+
+export function pushUndoSnapshot(game) {
+  const clone = structuredClone({
+    core: game.core,
+    spheres: game.spheres,
+    compendium: game.compendium,
+    chaptersIndex: game.chaptersIndex,
+    activeChapter: game.activeChapter
+  });
+  UNDO_STACK.push(clone);
+  if (UNDO_STACK.length > 5) UNDO_STACK.shift();
+}
+
+export function canUndo() {
+  return UNDO_STACK.length > 0;
+}
+
+export function popUndoSnapshot(game) {
+  const prev = UNDO_STACK.pop();
+  if (!prev) return false;
+  game.core = prev.core;
+  game.spheres = prev.spheres;
+  game.compendium = prev.compendium;
+  game.chaptersIndex = prev.chaptersIndex;
+  game.activeChapter = prev.activeChapter;
+  return true;
 }
 
 // ============================================================================
@@ -384,17 +494,22 @@ function upsertByKey(list, incoming, key = "id") {
   }
   const cleanIncoming = { ...incoming };
   delete cleanIncoming.renameFrom;
+  const logEntry = cleanIncoming.devLogEntry;
+  delete cleanIncoming.devLogEntry;
 
   if (idx >= 0) {
     const prev = list[idx];
     const mergedFacts = Array.isArray(prev.knownFacts) || Array.isArray(cleanIncoming.knownFacts)
       ? Array.from(new Set([...(prev.knownFacts || []), ...(cleanIncoming.knownFacts || [])]))
       : undefined;
-    list[idx] = { ...prev, ...cleanIncoming };
-    if (!cleanIncoming.imageWebp && prev.imageWebp) list[idx].imageWebp = prev.imageWebp;
+    const prevLogs = Array.isArray(prev.devLog) ? prev.devLog : [];
+    const nextLogs = logEntry ? [...prevLogs, logEntry].slice(-25) : prevLogs;
+    list[idx] = { ...prev, ...cleanIncoming, devLog: nextLogs };
+    if (!cleanIncoming.mediaId && prev.mediaId) list[idx].mediaId = prev.mediaId;
     if (mergedFacts) list[idx].knownFacts = mergedFacts;
   } else {
-    list.push({ ...cleanIncoming, [key]: idVal });
+    const devLog = logEntry ? [logEntry] : Array.isArray(cleanIncoming.devLog) ? cleanIncoming.devLog : [];
+    list.push({ ...cleanIncoming, [key]: idVal, devLog });
   }
 }
 
@@ -449,6 +564,21 @@ export function applyStatePatches(game, patches) {
     }
   }
 
+  if (Array.isArray(patches.currenciesUpdates)) {
+    for (const cu of patches.currenciesUpdates) {
+      if (!cu || !cu.name) continue;
+      const cid = cu.id || cu.name.toLowerCase().replace(/\s+/g, "_");
+      const existing = p.currencies.find((c) => c.id === cid || c.name.toLowerCase() === cu.name.toLowerCase());
+      if (existing) {
+        if (typeof cu.setAmount === "number") existing.amount = Math.max(0, cu.setAmount);
+        else if (typeof cu.delta === "number") existing.amount = Math.max(0, existing.amount + cu.delta);
+      } else {
+        const initAmt = typeof cu.setAmount === "number" ? cu.setAmount : Math.max(0, cu.delta || 0);
+        p.currencies.push({ id: cid, name: cu.name, amount: initAmt });
+      }
+    }
+  }
+
   if (Array.isArray(patches.bodyModifications)) {
     for (const mod of patches.bodyModifications) {
       if (mod && !p.bodyModifications.includes(mod)) p.bodyModifications.push(mod);
@@ -488,9 +618,21 @@ export function applyStatePatches(game, patches) {
     }
   }
 
+  if (Array.isArray(patches.projectUpdates)) {
+    for (const pr of patches.projectUpdates) {
+      if (pr?.remove && (pr.id || pr.name)) {
+        core.projects = core.projects.filter(
+          (x) => x.id !== pr.id && x.name !== pr.name
+        );
+      } else {
+        upsertByKey(core.projects, pr, "id");
+      }
+    }
+  }
+
   if (Array.isArray(patches.golemUpdates)) {
     for (const g of patches.golemUpdates) {
-      const exists = core.golems.items.some((x) => x.id === g.id || x.name === g.name);
+      const exists = core.golems.items.some((x) => x.id === g.id || x.name === g.name || x.name === g.renameFrom);
       if (exists || core.golems.items.length < core.golems.maxSlots) {
         upsertByKey(core.golems.items, g, "id");
       }
@@ -505,13 +647,27 @@ export function applyStatePatches(game, patches) {
     core.pet = { ...core.pet, ...patches.petPatch };
   }
 
+  if (Array.isArray(patches.keyItemUpdates)) {
+    for (const ki of patches.keyItemUpdates) {
+      if (ki?.remove && (ki.id || ki.name)) {
+        core.keyItems = core.keyItems.filter((x) => x.id !== ki.id && x.name !== ki.name);
+      } else {
+        upsertByKey(core.keyItems, ki, "id");
+      }
+    }
+  }
+
   if (Array.isArray(patches.itemsAdded)) {
     for (const item of patches.itemsAdded) {
-      if (item) p.inventory ? p.inventory.push(item) : core.inventory.push(item);
+      if (item) core.inventory.push(item);
     }
   }
   if (Array.isArray(patches.itemsRemoved)) {
     core.inventory = core.inventory.filter((it) => !patches.itemsRemoved.includes(it));
+  }
+
+  if (Array.isArray(patches.nearbyActors)) {
+    core.nearbyActors = patches.nearbyActors.slice(0, 14);
   }
 
   if (Array.isArray(patches.questUpdates)) {

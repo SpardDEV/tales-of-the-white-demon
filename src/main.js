@@ -5,7 +5,10 @@ import {
   loadGameDataLocal,
   loadSettings,
   persistGameDataLocal,
+  popUndoSnapshot,
+  pushUndoSnapshot,
   rotateChapter,
+  saveMediaLocal,
   saveSettings,
   shouldRotateChapter
 } from "./state.js";
@@ -45,43 +48,151 @@ function setSyncBadge(text, cls = "badge-muted") {
 function findEntity(type, id) {
   if (type === "player") return game.core.player;
   if (type === "pet") return game.core.pet;
-  if (type === "golem") {
-    return game.core.golems.items.find((g) => (g.id || g.name) === id);
-  }
+  if (type === "golem") return game.core.golems.items.find((g) => (g.id || g.name) === id);
+  if (type === "keyItem") return game.core.keyItems.find((k) => (k.id || k.name) === id);
   const list = game.compendium[type];
-  if (Array.isArray(list)) {
-    return list.find((item) => (item.id || item.name) === id);
-  }
+  if (Array.isArray(list)) return list.find((item) => (item.id || item.name) === id);
   return null;
 }
 
-const mediaHandlers = {
+async function openPromptModal(promptText) {
+  document.getElementById("prompt-modal-text").value = promptText;
+  document.getElementById("prompt-modal").classList.remove("hidden");
+  try {
+    await navigator.clipboard.writeText(promptText);
+  } catch {
+    // Modal permite copiar manualmente em WebViews restritas
+  }
+}
+
+async function attachMediaToId(mediaId, file) {
+  const webpDataUrl = await compressImageToWebP9x16(file);
+  const saved = await saveMediaLocal(mediaId, webpDataUrl);
+  game.mediaCache[mediaId] = saved;
+  game.usage.dirtyMediaIds = Array.from(new Set([...(game.usage.dirtyMediaIds || []), mediaId]));
+  return mediaId;
+}
+
+const uiHandlers = {
+  onShowPromptText: (text) => openPromptModal(text),
   onGeneratePrompt: async (type, id) => {
     const entity = findEntity(type, id);
     if (!entity) return;
-    const promptText = buildChatGptPrompt(type, entity, settings.artStylePrompt);
-    document.getElementById("prompt-modal-text").value = promptText;
-    document.getElementById("prompt-modal").classList.remove("hidden");
-    try {
-      await navigator.clipboard.writeText(promptText);
-    } catch {
-      // Clipboard pode ser bloqueado em WebView; o modal já deixa pronto para copiar
-    }
+    await openPromptModal(buildChatGptPrompt(type, entity, settings.artStylePrompt));
   },
   onUploadImage: async (type, id, file) => {
     try {
       const entity = findEntity(type, id);
       if (!entity) return;
-      const webpDataUrl = await compressImageToWebP9x16(file);
-      entity.imageWebp = webpDataUrl;
+      const mediaId = entity.mediaId || `media_${type}_${String(id).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+      await attachMediaToId(mediaId, file);
+      entity.mediaId = mediaId;
+      delete entity.imageWebp;
       await persistGameDataLocal(game);
       refreshAllViews();
       await syncIfConfigured(false);
     } catch (err) {
       alert(`Falha ao processar imagem: ${err.message}`);
     }
+  },
+  onUploadSceneImage: async (turnIdx, file) => {
+    try {
+      const turn = game.activeChapter.turns[turnIdx];
+      if (!turn) return;
+      const mediaId = turn.sceneMediaId || `scene_${game.activeChapter.chapterId}_t${turn.turn || turnIdx}`;
+      await attachMediaToId(mediaId, file);
+      turn.sceneMediaId = mediaId;
+      await persistGameDataLocal(game);
+      refreshAllViews();
+      await syncIfConfigured(false);
+    } catch (err) {
+      alert(`Falha ao processar cena: ${err.message}`);
+    }
+  },
+  onFocusChat: async (focusTarget, text) => {
+    switchTab("chat");
+    const prefix = focusTarget.kind === "mana_skill" ? "/mana " : "";
+    await sendTurn(`${prefix}[${focusTarget.name}] ${text}`, null, focusTarget);
   }
 };
+
+// ============================================================================
+// Mention Autocomplete (@, #, $, &)
+// ============================================================================
+function getMentionSuggestions(symbol, query = "") {
+  const q = query.toLowerCase();
+  let raw = [];
+
+  if (symbol === "@") {
+    const actors = new Set([
+      ...(game.core.nearbyActors || []),
+      ...game.core.golems.items.map((g) => g.name),
+      ...(game.core.pet?.unlocked && game.core.pet.name ? [game.core.pet.name] : []),
+      ...game.compendium.npcs.slice(-10).map((n) => n.name)
+    ]);
+    raw = Array.from(actors).filter(Boolean);
+  } else if (symbol === "#") {
+    const items = new Set([
+      ...game.core.keyItems.map((k) => k.name),
+      ...game.core.inventory
+    ]);
+    raw = Array.from(items).filter(Boolean);
+  } else if (symbol === "$") {
+    raw = (game.core.player.currencies || []).map((c) => `${c.name}(${c.amount})`);
+  } else if (symbol === "&") {
+    const sp = game.spheres[game.core.meta.activeSphereId];
+    raw = (sp?.nodes || []).filter((n) => n.discovered !== false).map((n) => n.name);
+  }
+
+  return raw
+    .filter((label) => !q || label.toLowerCase().includes(q))
+    .slice(0, 10)
+    .map((label) => ({
+      label,
+      token: `${symbol}${label.replace(/\([^)]*\)/g, "").trim().replace(/\s+/g, "_")}`
+    }));
+}
+
+function updateMentionPopover(forceSymbol = null) {
+  const pop = document.getElementById("mention-popover");
+  const inp = document.getElementById("chat-input");
+  const cursor = inp.selectionStart ?? inp.value.length;
+  const before = inp.value.slice(0, cursor);
+  const match = forceSymbol
+    ? [null, forceSymbol, ""]
+    : before.match(/(?:^|\s)([@#$&])([^\s]*)$/);
+
+  if (!match) {
+    pop.classList.add("hidden");
+    return;
+  }
+
+  const symbol = match[1];
+  const query = match[2] || "";
+  const items = getMentionSuggestions(symbol, query);
+
+  if (!items.length) {
+    pop.innerHTML = `<span class="muted" style="font-size:0.75rem;">Nenhum registro para ${symbol} ainda.</span>`;
+  } else {
+    pop.innerHTML = items
+      .map((it) => `<button type="button" class="mention-item" data-token="${it.token.replace(/"/g, "&quot;")}">${it.symbol || ""}${it.label}</button>`)
+      .join("");
+    pop.querySelectorAll(".mention-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tok = btn.dataset.token + " ";
+        if (forceSymbol) {
+          inp.value = inp.value + (inp.value && !inp.value.endsWith(" ") ? " " : "") + tok;
+        } else {
+          const prefixStart = before.lastIndexOf(symbol);
+          inp.value = inp.value.slice(0, prefixStart) + tok + inp.value.slice(cursor);
+        }
+        pop.classList.add("hidden");
+        inp.focus();
+      });
+    });
+  }
+  pop.classList.remove("hidden");
+}
 
 function parseCommand(raw) {
   const trimmed = raw.trim();
@@ -108,11 +219,11 @@ function switchTab(tabName) {
     p.classList.toggle("active", p.id === `tab-${tabName}`);
   });
 
-  if (tabName === "sheet") renderSheet(game, mediaHandlers);
+  if (tabName === "sheet") renderSheet(game, uiHandlers);
   if (tabName === "quests") renderQuests(game);
   if (tabName === "compendium") {
     const q = document.getElementById("compendium-search").value;
-    renderCompendium(game, settings, activeCompSubtab, q, mediaHandlers);
+    renderCompendium(game, settings, activeCompSubtab, q, uiHandlers);
   }
   if (tabName === "map" && globe) {
     viewingSphereId = viewingSphereId || game.core.meta.activeSphereId;
@@ -131,16 +242,16 @@ function switchTab(tabName) {
 function refreshAllViews() {
   renderHeaderAndQuotas(game, settings);
   renderPrologueBanner(game);
-  renderChatLog(game, transientMessages);
+  renderChatLog(game, transientMessages, uiHandlers);
   renderNegotiationBox(game);
-  renderSheet(game, mediaHandlers);
+  renderSheet(game, uiHandlers);
   renderQuests(game);
   renderCompendium(
     game,
     settings,
     activeCompSubtab,
     document.getElementById("compendium-search")?.value || "",
-    mediaHandlers
+    uiHandlers
   );
   renderSphereSelector(game, viewingSphereId || game.core.meta.activeSphereId);
   if (globe && game.spheres[viewingSphereId || game.core.meta.activeSphereId]) {
@@ -192,10 +303,10 @@ async function handleChapterRotationIfNeeded() {
   }
 }
 
-async function sendTurn(rawInput, negotiationAction = null) {
-  if (isSending) return;
+async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) {
+  if (isSending) return false;
   const cmd = parseCommand(rawInput);
-  if (!cmd.text && !negotiationAction) return;
+  if (!cmd.text && !negotiationAction) return false;
 
   isSending = true;
   transientMessages = [];
@@ -203,9 +314,11 @@ async function sendTurn(rawInput, negotiationAction = null) {
   btn.disabled = true;
   btn.textContent = "...";
 
+  pushUndoSnapshot(game);
+
   try {
-    const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction);
-    const contextPayload = buildContextPayload(game, cmd.text);
+    const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
+    const contextPayload = buildContextPayload(game, cmd.text, focusTarget);
 
     const { parsed } = await callGemini({
       apiKey: settings.geminiKey,
@@ -235,6 +348,25 @@ async function sendTurn(rawInput, negotiationAction = null) {
       applyStatePatches(game, parsed.statePatches);
     }
 
+    // Se veio de um mini-chat de Skill/Projeto e a IA não enviou devLogEntry explícito, registramos automaticamente!
+    if (focusTarget) {
+      const logItem = {
+        user: rawInput.replace(/^\/mana\s*/i, ""),
+        reply: parsed.narrative || ""
+      };
+      if (focusTarget.kind === "project") {
+        const pr = game.core.projects.find((p) => (p.id || p.name) === focusTarget.id);
+        if (pr) {
+          pr.devLog = [...(pr.devLog || []), logItem].slice(-25);
+        }
+      } else {
+        const sk = game.core.skills.find((s) => (s.id || s.name) === focusTarget.id);
+        if (sk) {
+          sk.devLog = [...(sk.devLog || []), logItem].slice(-25);
+        }
+      }
+    }
+
     if (parsed.chapterMeta?.suggestedTitle && !game.activeChapter.isClosed) {
       game.activeChapter.title = parsed.chapterMeta.suggestedTitle;
       const idx = game.chaptersIndex.find((c) => c.chapterId === game.activeChapter.chapterId);
@@ -255,7 +387,9 @@ async function sendTurn(rawInput, negotiationAction = null) {
       turn: game.core.meta.totalTurns,
       mode: parsed.mode || cmd.mode,
       user: rawInput === "__START_PROLOGUE__" ? "" : rawInput,
-      narrative: parsed.narrative || "(Sem resposta narrativa)"
+      narrative: parsed.narrative || "(Sem resposta narrativa)",
+      scenePrompt: parsed.scenePrompt || null,
+      sceneMediaId: null
     });
     game.activeChapter.turnCount = game.activeChapter.turns.length;
 
@@ -263,9 +397,13 @@ async function sendTurn(rawInput, negotiationAction = null) {
     await persistGameDataLocal(game);
     refreshAllViews();
     await syncIfConfigured(false);
+    return true;
   } catch (err) {
+    popUndoSnapshot(game);
     transientMessages.push({ mode: "error", text: err.message });
-    renderChatLog(game, transientMessages);
+    renderChatLog(game, transientMessages, uiHandlers);
+    renderHeaderAndQuotas(game, settings);
+    return false;
   } finally {
     isSending = false;
     btn.disabled = false;
@@ -313,16 +451,16 @@ function bindUI() {
         settings,
         activeCompSubtab,
         document.getElementById("compendium-search").value,
-        mediaHandlers
+        uiHandlers
       );
     });
   });
 
   document.getElementById("compendium-search").addEventListener("input", (e) => {
-    renderCompendium(game, settings, activeCompSubtab, e.target.value, mediaHandlers);
+    renderCompendium(game, settings, activeCompSubtab, e.target.value, uiHandlers);
   });
 
-  document.querySelectorAll(".chip").forEach((chip) => {
+  document.querySelectorAll(".chip[data-cmd]").forEach((chip) => {
     chip.addEventListener("click", () => {
       const inp = document.getElementById("chat-input");
       const cmd = chip.dataset.cmd;
@@ -335,19 +473,41 @@ function bindUI() {
     });
   });
 
-  document.getElementById("chat-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const inp = document.getElementById("chat-input");
-    const val = inp.value.trim();
-    if (!val) return;
-    inp.value = "";
-    await sendTurn(val);
+  document.querySelectorAll(".chip-mention").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      updateMentionPopover(chip.dataset.mention);
+    });
   });
 
-  document.getElementById("chat-input").addEventListener("keydown", (e) => {
+  document.getElementById("btn-undo-turn").addEventListener("click", async () => {
+    if (isSending) return;
+    if (popUndoSnapshot(game)) {
+      transientMessages = [{ mode: "system", text: "↶ Último turno desfeito." }];
+      await persistGameDataLocal(game);
+      refreshAllViews();
+      await syncIfConfigured(false);
+    }
+  });
+
+  const chatInp = document.getElementById("chat-input");
+  chatInp.addEventListener("input", () => updateMentionPopover());
+  chatInp.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       document.getElementById("chat-form").requestSubmit();
+    }
+  });
+
+  document.getElementById("chat-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    document.getElementById("mention-popover").classList.add("hidden");
+    const val = chatInp.value.trim();
+    if (!val) return;
+    chatInp.value = "";
+    const ok = await sendTurn(val);
+    if (!ok && !chatInp.value) {
+      // Restaura o texto caso falhe rede ou API
+      chatInp.value = val;
     }
   });
 
@@ -441,13 +601,18 @@ function bindUI() {
   document.getElementById("btn-sb-pull").addEventListener("click", async () => {
     try {
       setSyncBadge("Baixando...", "badge-warn");
-      const pulled = await pullGameFromSupabase(settings, game.usage);
+      const pulled = await pullGameFromSupabase(
+        settings,
+        game.usage,
+        game.mediaCache,
+        game.core.meta.lastMediaSyncAt
+      );
       game = pulled;
       viewingSphereId = game.core.meta.activeSphereId;
       await persistGameDataLocal(game);
       refreshAllViews();
       setSyncBadge("Nuvem OK", "badge-ok");
-      alert("Save carregado do Supabase com sucesso!");
+      alert("Save carregado do Supabase (com mídias diferenciais)!");
     } catch (err) {
       setSyncBadge("Sync erro", "badge-warn");
       alert(err.message);
@@ -496,7 +661,6 @@ function bindUI() {
 }
 
 async function init() {
-  // Liga todos os botões imediatamente antes de qualquer operação assíncrona
   bindUI();
   refreshAllViews();
 
@@ -527,7 +691,7 @@ async function init() {
       mode: "error",
       text: `Erro ao inicializar armazenamento local: ${err.message}. O jogo continuará em modo de memória.`
     });
-    renderChatLog(game, transientMessages);
+    renderChatLog(game, transientMessages, uiHandlers);
   }
 }
 

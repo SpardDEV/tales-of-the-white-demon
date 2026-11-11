@@ -1,4 +1,4 @@
-import { getChapterLocal } from "./state.js";
+import { canUndo, getChapterLocal } from "./state.js";
 import { fetchChapterOnDemand } from "./supabase.js";
 
 function esc(str) {
@@ -20,9 +20,17 @@ function textMeter(val, max, width = 10) {
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
 
-function renderMediaControls({ type, id, imageWebp, hasInfo = true }) {
-  const thumb = imageWebp
-    ? `<div class="portrait-wrap"><img class="portrait-img" src="${imageWebp}" alt="Arte 9:16" /></div>`
+export function resolveMediaUrl(game, entity) {
+  if (!entity) return null;
+  if (entity.mediaId && game.mediaCache?.[entity.mediaId]?.webpData) {
+    return game.mediaCache[entity.mediaId].webpData;
+  }
+  return entity.imageWebp || null;
+}
+
+function renderMediaControls({ type, id, imageUrl, hasInfo = true }) {
+  const thumb = imageUrl
+    ? `<div class="portrait-wrap"><img class="portrait-img" src="${imageUrl}" alt="Arte 9:16" /></div>`
     : `<div class="portrait-wrap"><span>9:16<br/>Sem Arte</span></div>`;
 
   const btns = `<div class="card-actions">
@@ -30,12 +38,47 @@ function renderMediaControls({ type, id, imageWebp, hasInfo = true }) {
       ? `<button class="btn btn-ghost btn-sm btn-gen-prompt" data-type="${esc(type)}" data-id="${esc(id)}">✧ Prompt 9:16</button>`
       : ""}
     <label class="btn btn-ice btn-sm file-label">
-      ◈ ${imageWebp ? "Trocar 9:16" : "Anexar 9:16"}
+      ◈ ${imageUrl ? "Trocar 9:16" : "Anexar 9:16"}
       <input type="file" accept="image/*" class="input-attach-img" data-type="${esc(type)}" data-id="${esc(id)}" hidden />
     </label>
   </div>`;
 
   return { thumb, btns };
+}
+
+function renderDevLogAndMiniChat({ kind, id, name, devLog = [], placeholder }) {
+  const logsHtml = devLog.length
+    ? `<div class="devlog-box">
+        ${devLog
+          .map(
+            (e) => `<div class="devlog-entry">
+              <div style="color:var(--ice);">▶ ${esc(e.user)}</div>
+              <div style="white-space:pre-wrap;">${esc(e.reply)}</div>
+            </div>`
+          )
+          .join("")}
+      </div>`
+    : `<div class="muted" style="margin-top:6px;font-size:0.76rem;">Sem histórico específico registrado ainda.</div>`;
+
+  return `
+    ${logsHtml}
+    <div class="mini-chat-row">
+      <input
+        type="text"
+        class="mini-chat-input"
+        data-focus-kind="${esc(kind)}"
+        data-focus-id="${esc(id)}"
+        data-focus-name="${esc(name)}"
+        placeholder="${esc(placeholder)}"
+      />
+      <button
+        class="btn btn-mana btn-sm btn-focus-send"
+        data-focus-kind="${esc(kind)}"
+        data-focus-id="${esc(id)}"
+        data-focus-name="${esc(name)}"
+      >Enviar</button>
+    </div>
+  `;
 }
 
 export function renderHeaderAndQuotas(game, settings) {
@@ -76,6 +119,11 @@ export function renderHeaderAndQuotas(game, settings) {
       `• Save + Imagens WebP 9:16: ${(usage.estimatedBytes / 1024).toFixed(1)} KB (${usedMb.toFixed(3)} MB / ${sbLimitMb} MB)\n` +
       `• Chamadas Supabase na sessão/dia: ${usage.supabaseRequests || 0}`;
   }
+
+  const undoBtn = document.getElementById("btn-undo-turn");
+  if (undoBtn) {
+    undoBtn.classList.toggle("hidden", !canUndo());
+  }
 }
 
 export function renderPrologueBanner(game) {
@@ -103,7 +151,7 @@ const MODE_LABELS = {
   error: { label: "▲ Aviso", cls: "msg-error" }
 };
 
-export function renderChatLog(game, transientMessages = []) {
+export function renderChatLog(game, transientMessages = [], handlers = {}) {
   const log = document.getElementById("chat-log");
   const turns = game?.activeChapter?.turns || [];
   let html = "";
@@ -115,17 +163,31 @@ export function renderChatLog(game, transientMessages = []) {
     </div>`;
   }
 
-  for (const t of turns) {
+  turns.forEach((t, idx) => {
     if (t.user) {
       html += `<div class="msg msg-user">${esc(t.user)}</div>`;
     }
     if (t.narrative) {
       const m = MODE_LABELS[t.mode] || MODE_LABELS.narrative;
+      const sceneImg = t.sceneMediaId ? game.mediaCache?.[t.sceneMediaId]?.webpData : null;
+      const sceneBlock = (t.scenePrompt || sceneImg)
+        ? `<div class="scene-art-box">
+            ${sceneImg ? `<img class="scene-art-thumb" src="${sceneImg}" alt="Cena 9:16" />` : ""}
+            <div class="card-actions">
+              ${t.scenePrompt ? `<button class="btn btn-ghost btn-sm btn-scene-prompt" data-turn-idx="${idx}">✧ Prompt Cena 9:16</button>` : ""}
+              <label class="btn btn-ice btn-sm file-label">
+                ◈ ${sceneImg ? "Trocar Cena" : "Anexar Cena 9:16"}
+                <input type="file" accept="image/*" class="input-attach-scene" data-turn-idx="${idx}" hidden />
+              </label>
+            </div>
+          </div>`
+        : "";
+
       html += `<div class="msg msg-ai ${m.cls}">
-        <div class="msg-tag">${m.label}</div>${esc(t.narrative)}
+        <div class="msg-tag">${m.label}</div>${esc(t.narrative)}${sceneBlock}
       </div>`;
     }
-  }
+  });
 
   for (const tm of transientMessages) {
     const m = MODE_LABELS[tm.mode] || MODE_LABELS.error;
@@ -136,6 +198,24 @@ export function renderChatLog(game, transientMessages = []) {
 
   log.innerHTML = html;
   log.scrollTop = log.scrollHeight;
+
+  log.querySelectorAll(".btn-scene-prompt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const turn = turns[Number(btn.dataset.turnIdx)];
+      if (turn?.scenePrompt && handlers.onShowPromptText) {
+        handlers.onShowPromptText(turn.scenePrompt);
+      }
+    });
+  });
+
+  log.querySelectorAll(".input-attach-scene").forEach((inp) => {
+    inp.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file && handlers.onUploadSceneImage) {
+        handlers.onUploadSceneImage(Number(inp.dataset.turnIdx), file);
+      }
+    });
+  });
 }
 
 export function renderNegotiationBox(game) {
@@ -156,13 +236,27 @@ export function renderNegotiationBox(game) {
 }
 
 export function renderSheet(game, handlers = {}) {
-  const { player, patronDeity, manaConsciousness, skills, golems, spatialPocket, pet, inventory } =
-    game.core;
+  const {
+    player,
+    patronDeity,
+    manaConsciousness,
+    skills,
+    projects,
+    golems,
+    spatialPocket,
+    pet,
+    keyItems,
+    inventory
+  } = game.core;
   const el = document.getElementById("sheet-content");
 
   const attrLines = Object.entries(player.attributes)
     .map(([k, v]) => `• ${k}: ${v}`)
     .join("\n");
+
+  const currencyLines = player.currencies?.length
+    ? player.currencies.map((c) => `• ${c.name}: ${c.amount}`).join("\n")
+    : "Nenhuma moeda registrada.";
 
   const statusText =
     `❄ NOME: ${player.name}\n` +
@@ -172,7 +266,8 @@ export function renderSheet(game, handlers = {}) {
     `♥ HP:   ${player.hp}/${player.hpMax} [${textMeter(player.hp, player.hpMax)}]\n` +
     `◈ Mana: ${player.mana}/${player.manaMax} [${textMeter(player.mana, player.manaMax)}]\n` +
     `⚡ Est.: ${player.stamina}/${player.staminaMax} [${textMeter(player.stamina, player.staminaMax)}]\n\n` +
-    `⌖ ATRIBUTOS:\n${attrLines}\n` +
+    `⌖ ATRIBUTOS:\n${attrLines}\n\n` +
+    `$ MOEDAS:\n${currencyLines}\n` +
     (player.titles.length ? `\n✦ Títulos: ${player.titles.join(" · ")}` : "") +
     (player.bodyModifications.length
       ? `\n❄ Modificações Corporais: ${player.bodyModifications.join(", ")}`
@@ -181,7 +276,7 @@ export function renderSheet(game, handlers = {}) {
   const playerMedia = renderMediaControls({
     type: "player",
     id: "player",
-    imageWebp: player.imageWebp,
+    imageUrl: resolveMediaUrl(game, player),
     hasInfo: true
   });
 
@@ -201,8 +296,13 @@ export function renderSheet(game, handlers = {}) {
 
   const skillsHtml = skills.length
     ? skills
-        .map(
-          (s) => `<div class="card skill-card">
+        .map((s) => {
+          const sId = s.id || s.name;
+          const focusKind = (s.isManaCore || manaConsciousness.unlocked) ? "mana_skill" : "skill";
+          const ph = focusKind === "mana_skill"
+            ? "Conversar com a Mana / evoluir esta habilidade..."
+            : "Testar, anotar ou treinar esta habilidade...";
+          return `<div class="card skill-card">
             <h3>❄ ${esc(s.name)} <span class="tag-pill">Tier ${esc(s.tier || "?")} · Lv.${s.level || 1}</span></h3>
             <div style="font-size:0.83rem;margin-bottom:4px;"><b>Escopo Atual:</b> ${esc(s.currentScope || "—")}</div>
             <div style="font-size:0.82rem;color:#fbbf24;margin-bottom:4px;"><b>Trava Lógica:</b> ${esc(s.hardLimits || "—")}</div>
@@ -212,10 +312,37 @@ export function renderSheet(game, handlers = {}) {
             ${Array.isArray(s.forcedScars) && s.forcedScars.length
               ? `<div style="font-size:0.8rem;color:#f87171;margin-top:4px;">▲ Sobrecargas: ${s.forcedScars.map(esc).join(" | ")}</div>`
               : ""}
-          </div>`
-        )
+            ${renderDevLogAndMiniChat({
+              kind: focusKind,
+              id: sId,
+              name: s.name,
+              devLog: s.devLog || [],
+              placeholder: ph
+            })}
+          </div>`;
+        })
         .join("")
     : `<div class="card"><div class="muted">Nenhuma habilidade selada ainda. Complete o Prólogo com a Deusa Patrona.</div></div>`;
+
+  const projectsHtml = projects?.length
+    ? projects
+        .map((pr) => {
+          const pId = pr.id || pr.name;
+          return `<div class="card">
+            <h3>⌖ ${esc(pr.name)} <span class="tag-pill">${pr.progress ?? 0}%</span></h3>
+            <div class="muted">${esc(pr.stage || pr.category || "Em pesquisa")}</div>
+            ${pr.notes ? `<div style="font-size:0.82rem;margin-top:4px;">${esc(pr.notes)}</div>` : ""}
+            ${renderDevLogAndMiniChat({
+              kind: "project",
+              id: pId,
+              name: pr.name,
+              devLog: pr.devLog || [],
+              placeholder: "Avançar ou ajustar este projeto de engenharia..."
+            })}
+          </div>`;
+        })
+        .join("")
+    : `<div class="card"><div class="muted">Nenhum projeto de engenharia ativo (ex.: estudos anatômicos, forja de golens).</div></div>`;
 
   const golemCards = [];
   for (let i = 0; i < golems.maxSlots; i++) {
@@ -224,7 +351,7 @@ export function renderSheet(game, handlers = {}) {
       const gm = renderMediaControls({
         type: "golem",
         id: g.id || g.name,
-        imageWebp: g.imageWebp,
+        imageUrl: resolveMediaUrl(game, g),
         hasInfo: true
       });
       golemCards.push(`
@@ -246,6 +373,29 @@ export function renderSheet(game, handlers = {}) {
     }
   }
 
+  const keyItemsHtml = keyItems?.length
+    ? keyItems
+        .map((ki) => {
+          const km = renderMediaControls({
+            type: "keyItem",
+            id: ki.id || ki.name,
+            imageUrl: resolveMediaUrl(game, ki),
+            hasInfo: true
+          });
+          return `<div class="card">
+            <h3>⚔ ${esc(ki.name)} ${ki.rarity ? `<span class="tag-pill">${esc(ki.rarity)}</span>` : ""}</h3>
+            <div class="card-flex">
+              ${km.thumb}
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.83rem;">${esc(ki.description || "")}</div>
+                ${km.btns}
+              </div>
+            </div>
+          </div>`;
+        })
+        .join("")
+    : `<div class="card"><div class="muted">Nenhum artefato ou arma importante registrada ainda.</div></div>`;
+
   const pocketHtml = spatialPocket.unlocked
     ? `<pre class="pre-sheet">✦ ${esc(spatialPocket.name)}\n◈ Mana Estocada: ${spatialPocket.storedMana} / ${spatialPocket.storedManaCap}\n❖ Golens Guardados: ${(spatialPocket.golemsInside || []).join(", ") || "Nenhum"}\n⚔ Arsenal: ${(spatialPocket.storedItems || []).join(", ") || "Vazio"}</pre>`
     : `<div class="muted">Bloqueado — reservado para o desbloqueio orgânico de Magia Espacial (~Lv 400).</div>`;
@@ -255,7 +405,7 @@ export function renderSheet(game, handlers = {}) {
     const pm = renderMediaControls({
       type: "pet",
       id: "pet",
-      imageWebp: pet.imageWebp,
+      imageUrl: resolveMediaUrl(game, pet),
       hasInfo: true
     });
     petHtml = `
@@ -282,16 +432,21 @@ export function renderSheet(game, handlers = {}) {
     </div>
     ${manaCard}
     <div class="card"><h3>☽ Deusa Patrona</h3><pre class="pre-sheet">${esc(patronDeity.name)} · Domínio: ${esc(patronDeity.domain)}\nVínculo: ${patronDeity.bond} · Postura: ${esc(patronDeity.disposition)}</pre></div>
-    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❄ Habilidades</h3>
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❄ Habilidades & Mini-Chat</h3>
     ${skillsHtml}
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">⌖ Projetos de Engenharia</h3>
+    ${projectsHtml}
     <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">❖ 7 Golens Autossustentáveis (${golems.items.length}/7)</h3>
     ${golemCards.join("")}
     <div class="card"><h3>✦ Mundo de Bolso (Magia Espacial)</h3>${pocketHtml}</div>
     <div class="card"><h3>⚔ Pet de Gelo</h3>${petHtml}</div>
-    <div class="card"><h3>☰ Inventário</h3><pre class="pre-sheet">${inventory.length ? esc(inventory.map((i) => `• ${i}`).join("\n")) : "Mochila vazia."}</pre></div>
+    <h3 style="font-size:0.9rem;color:var(--ice);margin:10px 2px 6px;">⚔ Itens-Chave & Arsenal (#)</h3>
+    ${keyItemsHtml}
+    <div class="card"><h3>☰ Mochila Geral (#)</h3><pre class="pre-sheet">${inventory.length ? esc(inventory.map((i) => `• ${i}`).join("\n")) : "Mochila vazia."}</pre></div>
   `;
 
   bindMediaHandlers(el, handlers);
+  bindFocusChatHandlers(el, handlers);
 }
 
 export function renderQuests(game) {
@@ -387,7 +542,7 @@ export async function renderCompendium(game, settings, activeSubtab, query = "",
       const media = renderMediaControls({
         type: activeSubtab,
         id: item.id || item.name,
-        imageWebp: item.imageWebp,
+        imageUrl: resolveMediaUrl(game, item),
         hasInfo: hasEnoughInfo
       });
 
@@ -435,6 +590,28 @@ function bindMediaHandlers(container, handlers) {
   });
 }
 
+function bindFocusChatHandlers(container, handlers) {
+  if (!handlers?.onFocusChat) return;
+  container.querySelectorAll(".btn-focus-send").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const inp = container.querySelector(
+        `.mini-chat-input[data-focus-kind="${CSS.escape(btn.dataset.focusKind)}"][data-focus-id="${CSS.escape(btn.dataset.focusId)}"]`
+      );
+      const val = inp?.value.trim();
+      if (!val) return;
+      inp.value = "";
+      handlers.onFocusChat(
+        {
+          kind: btn.dataset.focusKind,
+          id: btn.dataset.focusId,
+          name: btn.dataset.focusName
+        },
+        val
+      );
+    });
+  });
+}
+
 export function renderSphereSelector(game, viewingSphereId) {
   const select = document.getElementById("sphere-select");
   const spheres = Object.values(game.spheres);
@@ -457,6 +634,11 @@ export function renderMapNodeCard(game, viewingSphereId, node, onTravelSphere) {
     ? `<button id="btn-travel-sphere" class="btn btn-mana btn-sm" style="margin-top:8px;">✦ Viajar / Retornar para esta Esfera</button>`
     : "";
 
+  const portalTarget = node?.portalToSphereId ? game.spheres[node.portalToSphereId] : null;
+  const portalBtn = portalTarget
+    ? `<button id="btn-portal-sphere" class="btn btn-ice btn-sm" style="margin-top:8px;">◎ Atravessar Portal → ${esc(portalTarget.name)}</button>`
+    : "";
+
   if (!node) {
     card.innerHTML = `
       <div><b>${esc(sphere?.name || "Esfera")}</b> · Leis: ${esc(sphere?.lawsSummary || "—")}</div>
@@ -468,15 +650,19 @@ export function renderMapNodeCard(game, viewingSphereId, node, onTravelSphere) {
       node.id === game.core.meta.activeNodeId &&
       viewingSphereId === game.core.meta.activeSphereId;
     card.innerHTML = `
-      <div><b>${esc(node.asciiGlyph || "◎")} ${esc(node.name)}</b> ${isHere ? '<span class="tag-pill">Você está aqui</span>' : ""}</div>
+      <div><b>${esc(node.asciiGlyph || "◎")} ${esc(node.name)}</b> ${node.region ? `<span class="tag-pill">${esc(node.region)}</span>` : ""} ${isHere ? '<span class="tag-pill">Você está aqui</span>' : ""}</div>
       <div class="muted">Perigo: ${esc(node.dangerRank || "?")} · Coord: (${node.lat.toFixed(1)}°, ${node.lon.toFixed(1)}°)</div>
       <div style="margin-top:4px;">${esc(node.summary || "")}</div>
-      ${travelBtn}
+      ${portalBtn || travelBtn}
     `;
   }
 
   const btn = document.getElementById("btn-travel-sphere");
   if (btn && onTravelSphere) {
     btn.addEventListener("click", () => onTravelSphere(viewingSphereId));
+  }
+  const pBtn = document.getElementById("btn-portal-sphere");
+  if (pBtn && portalTarget && onTravelSphere) {
+    pBtn.addEventListener("click", () => onTravelSphere(portalTarget.id));
   }
 }

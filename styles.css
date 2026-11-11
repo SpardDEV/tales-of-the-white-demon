@@ -269,6 +269,74 @@ html, body {
   white-space: nowrap;
   cursor: pointer;
 }
+.chip-mention { color: var(--mana); font-weight: 700; min-width: 28px; }
+.chip-warn { color: var(--warn); border-color: #6b5312; }
+
+.mention-popover {
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 110px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.mention-item {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid #2b3f5e;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.scene-art-box {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.scene-art-thumb {
+  width: 120px;
+  aspect-ratio: 9 / 16;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.devlog-box {
+  margin-top: 8px;
+  background: #070b13;
+  border: 1px solid #172438;
+  border-radius: 8px;
+  padding: 6px 8px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 0.77rem;
+}
+
+.devlog-entry {
+  border-bottom: 1px solid #121d2e;
+  padding: 4px 0;
+}
+.devlog-entry:last-child { border-bottom: none; }
+
+.mini-chat-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+.mini-chat-input {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+}
 
 .chat-form {
   display: flex;

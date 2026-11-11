@@ -1,4 +1,4 @@
-import { getAllChaptersLocal, saveChapterLocal, todayKey } from "./state.js";
+import { getAllChaptersLocal, saveChapterLocal, saveMediaLocal, todayKey } from "./state.js";
 
 export function isSupabaseConfigured(settings) {
   return Boolean(settings.supabaseUrl && settings.supabaseAnonKey && settings.slotId);
@@ -15,7 +15,6 @@ function headers(settings, extra = {}) {
     "Content-Type": "application/json",
     ...extra
   };
-  // Chaves modernas sb_publishable_ não são JWT; enviá-las em Authorization Bearer falha na API
   if (key && !key.startsWith("sb_")) {
     base.Authorization = `Bearer ${key}`;
   }
@@ -51,7 +50,6 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
   const slotId = settings.slotId.trim();
   const now = new Date().toISOString();
 
-  // 1. Core sempre sincronizado
   await upsert(
     settings,
     "twd_saves",
@@ -60,7 +58,6 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
     game.usage
   );
 
-  // 2. Esferas (ativa por padrão, ou todas no fullSync)
   const sphereRows = (fullSync
     ? Object.values(game.spheres)
     : [game.spheres[game.core.meta.activeSphereId]].filter(Boolean)
@@ -74,7 +71,6 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
     await upsert(settings, "twd_spheres", "slot_id,sphere_id", sphereRows, game.usage);
   }
 
-  // 3. Compêndio (3 categorias enxutas)
   await upsert(
     settings,
     "twd_compendium",
@@ -87,7 +83,6 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
     game.usage
   );
 
-  // 4. Capítulo ativo (ou todos no fullSync)
   const chaptersToPush = fullSync
     ? await getAllChaptersLocal()
     : [game.activeChapter];
@@ -106,7 +101,26 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
     await upsert(settings, "twd_chapters", "slot_id,chapter_id", chapterRows, game.usage);
   }
 
-  // 5. Consumo do dia
+  // Upload diferencial apenas das mídias novas/alteradas (ou todas no fullSync)
+  const mediaIdsToPush = fullSync
+    ? Object.keys(game.mediaCache || {})
+    : (game.usage.dirtyMediaIds || []);
+  if (mediaIdsToPush.length) {
+    const mediaRows = mediaIdsToPush
+      .map((id) => game.mediaCache?.[id])
+      .filter((m) => m && m.webpData)
+      .map((m) => ({
+        slot_id: slotId,
+        media_id: m.mediaId,
+        webp_data: m.webpData,
+        updated_at: m.updatedAt || now
+      }));
+    if (mediaRows.length) {
+      await upsert(settings, "twd_media", "slot_id,media_id", mediaRows, game.usage);
+    }
+    game.usage.dirtyMediaIds = [];
+  }
+
   await upsert(
     settings,
     "twd_usage",
@@ -127,9 +141,9 @@ export async function syncTurnToSupabase(settings, game, { fullSync = false } = 
   return true;
 }
 
-export async function pullGameFromSupabase(settings, currentUsage) {
+export async function pullGameFromSupabase(settings, currentUsage, currentMediaCache = {}, lastMediaSyncAt = null) {
   if (!isSupabaseConfigured(settings)) {
-    throw new Error("Preencha URL, Anon Key e Slot ID do Supabase nas Configurações.");
+    throw new Error("Preencha URL, Publishable Key e Slot ID do Supabase nas Configurações.");
   }
   const slot = encodeURIComponent(settings.slotId.trim());
 
@@ -151,9 +165,7 @@ export async function pullGameFromSupabase(settings, currentUsage) {
     currentUsage
   );
   const spheres = {};
-  for (const r of sphereRows || []) {
-    spheres[r.sphere_id] = r.data;
-  }
+  for (const r of sphereRows || []) spheres[r.sphere_id] = r.data;
 
   const compRows = await sbFetch(
     settings,
@@ -166,7 +178,6 @@ export async function pullGameFromSupabase(settings, currentUsage) {
     if (compendium[r.category]) compendium[r.category] = r.items || [];
   }
 
-  // Baixa apenas metadados/resumos de todos os capítulos (sem turnos brutos antigos)
   const idxRows = await sbFetch(
     settings,
     `twd_chapters?slot_id=eq.${slot}&select=chapter_id,chapter_number,title,summary,turn_count,is_closed&order=chapter_number.asc`,
@@ -182,7 +193,6 @@ export async function pullGameFromSupabase(settings, currentUsage) {
     isClosed: r.is_closed
   }));
 
-  // Baixa os turnos apenas do capítulo ativo
   const activeId = encodeURIComponent(core.meta.activeChapterId);
   const activeRows = await sbFetch(
     settings,
@@ -211,6 +221,29 @@ export async function pullGameFromSupabase(settings, currentUsage) {
         isClosed: false
       };
 
+  // Download diferencial de imagens: baixa apenas mídias mais novas que lastMediaSyncAt
+  const mediaCache = { ...currentMediaCache };
+  try {
+    const filterSince = lastMediaSyncAt
+      ? `&updated_at=gt.${encodeURIComponent(lastMediaSyncAt)}`
+      : "";
+    const mediaRows = await sbFetch(
+      settings,
+      `twd_media?slot_id=eq.${slot}${filterSince}&select=media_id,webp_data,updated_at`,
+      { headers: headers(settings) },
+      currentUsage
+    );
+    let newestIso = lastMediaSyncAt;
+    for (const mr of mediaRows || []) {
+      const saved = await saveMediaLocal(mr.media_id, mr.webp_data, mr.updated_at);
+      mediaCache[mr.media_id] = saved;
+      if (!newestIso || mr.updated_at > newestIso) newestIso = mr.updated_at;
+    }
+    if (newestIso) core.meta.lastMediaSyncAt = newestIso;
+  } catch {
+    // Se twd_media ainda não foi criada no SQL Editor, não quebra o pull principal
+  }
+
   const day = encodeURIComponent(todayKey());
   const usageRows = await sbFetch(
     settings,
@@ -225,10 +258,11 @@ export async function pullGameFromSupabase(settings, currentUsage) {
     geminiTokens: Number(ur?.gemini_tokens ?? currentUsage.geminiTokens ?? 0),
     recentRequestTimestamps: currentUsage.recentRequestTimestamps || [],
     supabaseRequests: ur?.supabase_requests ?? currentUsage.supabaseRequests ?? 0,
-    estimatedBytes: 0
+    estimatedBytes: 0,
+    dirtyMediaIds: []
   };
 
-  return { core, spheres, compendium, chaptersIndex, activeChapter, usage };
+  return { core, spheres, compendium, chaptersIndex, activeChapter, usage, mediaCache };
 }
 
 export async function fetchChapterOnDemand(settings, chapterId, usage) {
