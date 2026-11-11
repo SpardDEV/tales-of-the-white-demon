@@ -589,7 +589,7 @@ function bindUI() {
 
   const muteBtn = document.getElementById("btn-mute");
   const paintMute = () => {
-    muteBtn.textContent = isMuted() ? "✕" : "♪";
+    muteBtn.firstElementChild.style.setProperty("--i", `url(assets_curated/icons/${isMuted() ? "ui/invisible" : "items/bullhorn"}.svg)`);
     muteBtn.title = isMuted() ? "Modo Furtivo ligado (sem som)" : "Som ligado — toque para Modo Furtivo";
   };
   paintMute();

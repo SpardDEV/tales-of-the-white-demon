@@ -21,7 +21,7 @@
     <header class="topbar">
       <div class="topbar-row">
         <div class="brand">
-          <span class="brand-icon mono-icon">❄</span>
+          <i class="mono-icon ico brand-icon" style="--i:url(assets_curated/icons/nature/snowflake.svg)"></i>
           <div>
             <div class="brand-title">Tales of the White Demon</div>
             <div id="header-sub" class="brand-sub">Rank F · Lv. 1 · Cap. 1</div>
@@ -29,8 +29,8 @@
         </div>
         <div class="topbar-actions">
           <span id="sync-badge" class="badge badge-muted" title="Status de sincronização">Local</span>
-          <button id="btn-mute" class="icon-btn mono-icon" title="Modo Furtivo (Mute)">♪</button>
-          <button id="btn-open-settings" class="icon-btn mono-icon" title="Configurações & API">⚙</button>
+          <button id="btn-mute" class="icon-btn mono-icon" title="Modo Furtivo (Mute)"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/bullhorn.svg)"></i></button>
+          <button id="btn-open-settings" class="icon-btn mono-icon" title="Configurações & API"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/settings.svg)"></i></button>
         </div>
       </div>
 
@@ -38,7 +38,7 @@
       <div class="quota-strip" id="quota-strip" title="Toque para detalhes de consumo">
         <div class="quota-item">
           <div class="quota-label">
-            <span><i class="mono-icon">✦</i> Gemini (Dia)</span>
+            <span><i class="mono-icon ico" style="--i:url(assets_curated/icons/game/mana.svg)"></i> Gemini (Dia)</span>
             <span id="gemini-quota-text">0 / 250 req · 0 tok</span>
           </div>
           <div class="progress-track">
@@ -47,7 +47,7 @@
         </div>
         <div class="quota-item">
           <div class="quota-label">
-            <span><i class="mono-icon">◈</i> Supabase</span>
+            <span><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/save.svg)"></i> Supabase</span>
             <span id="supabase-quota-text">0.00 / 500 MB</span>
           </div>
           <div class="progress-track">
@@ -86,10 +86,10 @@
             <button class="chip chip-mention" data-mention="#" title="Puxar item do inventário">#</button>
             <button class="chip chip-mention" data-mention="$" title="Puxar moeda/recurso">$</button>
             <button class="chip chip-mention" data-mention="&" title="Puxar local descoberto">&amp;</button>
-            <button class="chip" data-cmd="/pray " title="Falar com a Deusa Patrona"><i class="mono-icon">☽</i> /pray</button>
-            <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo"><i class="mono-icon">⌖</i> /world</button>
-            <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar"><i class="mono-icon">❖</i> /system</button>
-            <button class="chip" data-cmd="/mana " title="Falar direto com a Consciência da Mana"><i class="mono-icon">◈</i> /mana</button>
+            <button class="chip" data-cmd="/pray " title="Falar com a Deusa Patrona"><i class="mono-icon ico" style="--i:url(assets_curated/icons/nature/night.svg)"></i> /pray</button>
+            <button class="chip" data-cmd="/world " title="Definir ou alterar fatos do mundo"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/compass.svg)"></i> /world</button>
+            <button class="chip" data-cmd="/system " title="Acessar tela do Sistema / opinar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/grid.svg)"></i> /system</button>
+            <button class="chip" data-cmd="/mana " title="Falar direto com a Consciência da Mana"><i class="mono-icon ico" style="--i:url(assets_curated/icons/game/mana-points.svg)"></i> /mana</button>
           </div>
           <form id="chat-form" class="chat-form">
             <textarea
@@ -115,10 +115,10 @@
       <!-- TAB: COMPÊNDIO -->
       <section id="tab-compendium" class="panel">
         <div class="subtabs">
-          <button class="subtab active" data-comp="npcs">☽ NPCs</button>
-          <button class="subtab" data-comp="bestiary">⚔ Bestiário</button>
-          <button class="subtab" data-comp="concepts">✦ Conceitos</button>
-          <button class="subtab" data-comp="chapters">☰ Capítulos</button>
+          <button class="subtab active" data-comp="npcs"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/user-group.svg)"></i> NPCs</button>
+          <button class="subtab" data-comp="bestiary"><i class="mono-icon ico" style="--i:url(assets_curated/icons/game/skull.svg)"></i> Bestiário</button>
+          <button class="subtab" data-comp="concepts"><i class="mono-icon ico" style="--i:url(assets_curated/icons/nature/star.svg)"></i> Conceitos</button>
+          <button class="subtab" data-comp="chapters"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/menu.svg)"></i> Capítulos</button>
         </div>
         <div class="search-row">
           <input id="compendium-search" type="search" placeholder="Filtrar descobertas..." />
@@ -131,9 +131,9 @@
         <div class="map-toolbar">
           <select id="sphere-select" class="select-input"></select>
           <div class="map-zoom-btns">
-            <button id="btn-zoom-in" class="icon-btn" title="Aproximar">+</button>
-            <button id="btn-zoom-out" class="icon-btn" title="Afastar">−</button>
-            <button id="btn-globe-reset" class="icon-btn" title="Centralizar">⟲</button>
+            <button id="btn-zoom-in" class="icon-btn" title="Aproximar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/zoom-in.svg)"></i></button>
+            <button id="btn-zoom-out" class="icon-btn" title="Afastar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/zoom-out.svg)"></i></button>
+            <button id="btn-globe-reset" class="icon-btn" title="Centralizar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/rotate-left.svg)"></i></button>
           </div>
         </div>
         <div class="globe-wrap">
@@ -148,11 +148,11 @@
 
     <!-- BOTTOM NAVIGATION (MONOCHROME DARK FANTASY) -->
     <nav class="bottom-nav">
-      <button class="nav-btn active" data-tab="chat"><i class="mono-icon">✧</i><span>Chat</span></button>
-      <button class="nav-btn" data-tab="sheet"><i class="mono-icon">❖</i><span>Ficha</span></button>
-      <button class="nav-btn" data-tab="quests"><i class="mono-icon">⚔</i><span>Quests</span></button>
-      <button class="nav-btn" data-tab="compendium"><i class="mono-icon">☰</i><span>Compêndio</span></button>
-      <button class="nav-btn" data-tab="map"><i class="mono-icon">⌖</i><span>Mapa</span></button>
+      <button class="nav-btn active" data-tab="chat"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/paper-plane.svg)"></i><span>Chat</span></button>
+      <button class="nav-btn" data-tab="sheet"><i class="mono-icon ico" style="--i:url(assets_curated/icons/game/character.svg)"></i><span>Ficha</span></button>
+      <button class="nav-btn" data-tab="quests"><i class="mono-icon ico" style="--i:url(assets_curated/icons/gear/sword.svg)"></i><span>Quests</span></button>
+      <button class="nav-btn" data-tab="compendium"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/book.svg)"></i><span>Compêndio</span></button>
+      <button class="nav-btn" data-tab="map"><i class="mono-icon ico" style="--i:url(assets_curated/icons/items/map.svg)"></i><span>Mapa</span></button>
     </nav>
   </div>
 
@@ -161,7 +161,7 @@
     <div class="modal-card">
       <div class="modal-header">
         <h2>✧ Prompt 9:16 (ChatGPT)</h2>
-        <button id="btn-close-prompt" class="icon-btn">✕</button>
+        <button id="btn-close-prompt" class="icon-btn" title="Fechar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/cross.svg)"></i></button>
       </div>
       <div class="modal-body">
         <div class="muted" style="margin-bottom:8px;">Copie e cole no ChatGPT para gerar a arte Dark Fantasy vertical (9:16), depois use <b>Anexar 9:16</b> no card.</div>
@@ -177,8 +177,8 @@
   <div id="settings-modal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>⚙ Configurações, APIs & Arte</h2>
-        <button id="btn-close-settings" class="icon-btn">✕</button>
+        <h2><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/settings.svg)"></i> Configurações, APIs & Arte</h2>
+        <button id="btn-close-settings" class="icon-btn" title="Fechar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/cross.svg)"></i></button>
       </div>
       <div class="modal-body">
         <div class="form-group">
