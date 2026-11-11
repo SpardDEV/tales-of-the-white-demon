@@ -40,8 +40,9 @@ export function createInitialGameData() {
         version: 2,
         phase: "prologue_world",
         prologueQuestionCount: 0,
-        prologueTargetMin: 15,
+        prologueTargetMin: 30,
         prologueTargetMax: 30,
+        deityTarget: 15,
         deityQuestionCount: 0,
         activeChapterId: chapterId,
         activeChapterNumber: 1,
@@ -77,8 +78,11 @@ export function createInitialGameData() {
         currencies: [],
         bodyModifications: [],
         titles: ["Alma Deslocada"],
-        statusEffects: []
+        statusEffects: [],
+        armor: 0, // Fase 5.7: dano bruto − armadura bate nos 100% de HP
+        injuries: {} // região -> { severity 0..100, effect } (estilo Fallout)
       },
+      magicSystem: null, // Fase 5.7: leis/"física" da magia montadas nas 15 perguntas da Deusa
       patronDeity: {
         name: "Deusa Desconhecida",
         domain: "A definir",
@@ -375,6 +379,12 @@ function migrateLegacyCore(core) {
   if (!Array.isArray(core.projects)) core.projects = [];
   if (!Array.isArray(core.keyItems)) core.keyItems = [];
   if (!Array.isArray(core.nearbyActors)) core.nearbyActors = [];
+  if (!core.player.injuries || typeof core.player.injuries !== "object") core.player.injuries = {};
+  // Fase 5.7: HP é sempre percentual (0..100)
+  if (core.player.hpMax !== 100) {
+    core.player.hp = Math.round((core.player.hp / (core.player.hpMax || 100)) * 100);
+    core.player.hpMax = 100;
+  }
   core.skills = (core.skills || []).map((s) => ({ devLog: [], ...s }));
   return core;
 }
@@ -526,7 +536,6 @@ export function applyStatePatches(game, patches) {
     p.appearance = patches.playerAppearance.trim();
   }
 
-  if (typeof patches.hpMaxDelta === "number") p.hpMax = Math.max(10, p.hpMax + patches.hpMaxDelta);
   if (typeof patches.manaMaxDelta === "number") p.manaMax = Math.max(0, p.manaMax + patches.manaMaxDelta);
   if (typeof patches.staminaMaxDelta === "number") p.staminaMax = Math.max(10, p.staminaMax + patches.staminaMaxDelta);
 
@@ -539,7 +548,6 @@ export function applyStatePatches(game, patches) {
     while (p.xp >= p.xpToNext) {
       p.xp -= p.xpToNext;
       p.level += 1;
-      p.hpMax += 12;
       p.manaMax += 8;
       p.staminaMax += 8;
       p.hp = p.hpMax;
@@ -590,6 +598,19 @@ export function applyStatePatches(game, patches) {
       if (t && !p.titles.includes(t)) p.titles.push(t);
     }
   }
+  if (typeof patches.armor === "number") p.armor = Math.max(0, Math.round(patches.armor));
+  if (Array.isArray(patches.injuryUpdates)) {
+    for (const inj of patches.injuryUpdates) {
+      if (!inj || typeof inj.region !== "string" || !inj.region.trim()) continue;
+      const sev = clamp(Math.round(Number(inj.severity) || 0), 0, 100);
+      if (sev === 0) delete p.injuries[inj.region];
+      else p.injuries[inj.region] = { severity: sev, effect: String(inj.effect || "") };
+    }
+  }
+  if (patches.magicSystemPatch && typeof patches.magicSystemPatch === "object") {
+    core.magicSystem = { ...(core.magicSystem || {}), ...patches.magicSystemPatch };
+  }
+
   if (Array.isArray(patches.statusEffects)) {
     p.statusEffects = patches.statusEffects;
   }

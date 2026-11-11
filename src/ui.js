@@ -155,7 +155,7 @@ export function renderPrologueBanner(game) {
     banner.textContent = `✦ Prólogo — Voz do Mundo (${prologueQuestionCount}/${prologueTargetMax} perguntas abertas · Construindo leis do mundo)`;
   } else if (phase === "prologue_deity") {
     banner.classList.remove("hidden");
-    banner.textContent = `☽ Prólogo — Deusa Patrona (${deityQuestionCount} perguntas · Moldando afinidade de Gelo)`;
+    banner.textContent = `☽ Prólogo — Deusa Patrona (${deityQuestionCount}/${game.core.meta.deityTarget || 15} perguntas · Moldando o sistema mágico)`;
   } else {
     banner.classList.add("hidden");
   }
@@ -290,6 +290,15 @@ export function renderSheet(game, handlers = {}) {
     `⌖ ATRIBUTOS:\n${attrLines}\n\n` +
     `$ MOEDAS:\n${currencyLines}\n` +
     (player.titles.length ? `\n✦ Títulos: ${player.titles.join(" · ")}` : "") +
+    `\n⛨ Armadura: ${player.armor || 0}` +
+    (Object.keys(player.injuries || {}).length
+      ? `\n✚ LESÕES:\n${Object.entries(player.injuries)
+          .map(([r, i]) => `• ${r} [${textMeter(i.severity, 100)}] ${i.effect}`)
+          .join("\n")}`
+      : "") +
+    (game.core.magicSystem?.laws?.length
+      ? `\n\n✦ LEIS DA MAGIA:\n${game.core.magicSystem.laws.map((l) => `• ${l}`).join("\n")}`
+      : "") +
     (player.bodyModifications.length
       ? `\n❄ Modificações Corporais: ${player.bodyModifications.join(", ")}`
       : "");
@@ -494,6 +503,121 @@ export function renderQuests(game) {
   `;
 }
 
+async function loadChapterAnywhere(game, settings, chId) {
+  if (chId === game.activeChapter.chapterId) return game.activeChapter;
+  return (
+    (await getChapterLocal(chId)) ||
+    (await fetchChapterOnDemand(settings, chId, game.usage).catch(() => null))
+  );
+}
+
+// Estúdio Webtoon (aberto pelas Configurações): capítulos → 60 páginas com envio e checklist.
+export async function renderWebtoonStudio(game, settings, handlers = {}, chapterId = null) {
+  const el = document.getElementById("webtoon-content");
+  const rerender = (id) => renderWebtoonStudio(game, settings, handlers, id);
+
+  if (!chapterId) {
+    const closed = [...game.chaptersIndex].filter((c) => c.isClosed).reverse();
+    el.innerHTML = closed.length
+      ? closed
+          .map(
+            (c) => `<button class="btn btn-ghost wt-open-ch" data-ch="${esc(c.chapterId)}" style="display:block;width:100%;text-align:left;margin-bottom:6px;">
+              ☰ Cap. ${c.chapterNumber}: ${esc(c.title || "Sem título")}</button>`
+          )
+          .join("")
+      : `<div class="muted">Nenhum capítulo fechado ainda. O Webtoon nasce quando um capítulo fecha.</div>`;
+    el.querySelectorAll(".wt-open-ch").forEach((b) => b.addEventListener("click", () => rerender(b.dataset.ch)));
+    return;
+  }
+
+  el.innerHTML = `<span class="muted">Carregando capítulo...</span>`;
+  const ch = await loadChapterAnywhere(game, settings, chapterId);
+  const back = `<button class="btn btn-ghost btn-sm wt-back">← Capítulos</button>`;
+  const bindBack = () => el.querySelector(".wt-back")?.addEventListener("click", () => rerender(null));
+  if (!ch?.turns?.length) {
+    el.innerHTML = `${back}<div class="muted" style="margin-top:8px;">Sem turnos salvos para este capítulo.</div>`;
+    return bindBack();
+  }
+
+  const pages = ch.webtoonPrompts;
+  if (!pages?.length) {
+    el.innerHTML = `${back}<div style="margin-top:8px;">
+      <div class="muted">Cap. ${ch.chapterNumber} ainda não tem roteiro.</div>
+      <button class="btn btn-ice btn-sm wt-gen" style="margin-top:8px;">🎞 Roteirizar páginas</button></div>`;
+    bindBack();
+    el.querySelector(".wt-gen").addEventListener("click", async (ev) => {
+      ev.target.disabled = true;
+      ev.target.textContent = `Roteirizando ${ch.turns.length} turnos...`;
+      try {
+        await handlers.onGenerateWebtoon(ch);
+        rerender(chapterId);
+      } catch (err) {
+        ev.target.disabled = false;
+        ev.target.textContent = `Falhou (${err.message}) — tentar de novo`;
+      }
+    });
+    return;
+  }
+
+  const cast = { player: game.core.player };
+  for (const n of game.compendium.npcs || []) cast[n.id || n.name] = n;
+  const doneCount = pages.filter((p) => p.done).length;
+
+  el.innerHTML = `${back}
+    <h3 style="margin:8px 0;">Cap. ${ch.chapterNumber}: ${esc(ch.title || "")} · ${doneCount}/${pages.length} enviadas</h3>
+    ${pages
+      .map((p, i) => {
+        const refs = p.characters.map((id) => cast[id]).filter(Boolean);
+        const own = p.mediaId ? resolveMediaUrl(game, p) : null;
+        return `<div style="border-top:1px solid var(--border);padding:6px 0;font-size:0.8rem;">
+          <label style="color:var(--ice);display:flex;gap:6px;align-items:center;">
+            <input type="checkbox" class="wt-done" data-i="${i}" ${p.done ? "checked" : ""} /> Pág. ${p.page} ${p.done ? "✓ enviada" : ""}
+          </label>
+          <div style="margin:3px 0;white-space:pre-wrap;">${esc(p.prompt)}</div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            ${own ? `<img src="${own}" alt="Página ${p.page}" style="height:72px;aspect-ratio:9/16;object-fit:cover;border:1px solid var(--ice);" />` : ""}
+            ${refs
+              .map((r) => {
+                const url = resolveMediaUrl(game, r);
+                return url
+                  ? `<img src="${url}" alt="${esc(r.name || "")}" title="${esc(r.name || "")}" style="height:48px;aspect-ratio:9/16;object-fit:cover;border:1px solid var(--border);" />`
+                  : `<span class="muted">${esc(r.name || "?")} (sem arte)</span>`;
+              })
+              .join("")}
+            <button class="btn btn-ghost btn-sm wt-copy" data-i="${i}">⧉ Copiar</button>
+            <label class="btn btn-ice btn-sm file-label">⬆ ${own ? "Trocar" : "Enviar"}
+              <input type="file" accept="image/*" class="wt-upload" data-i="${i}" hidden />
+            </label>
+          </div>
+        </div>`;
+      })
+      .join("")}`;
+  bindBack();
+
+  el.querySelectorAll(".wt-copy").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = pages[Number(b.dataset.i)];
+      const names = p.characters.map((id) => cast[id]?.name).filter(Boolean);
+      handlers.onShowPromptText?.(p.prompt + (names.length ? `\n\nReference art attached for: ${names.join(", ")}.` : ""));
+    })
+  );
+  el.querySelectorAll(".wt-done").forEach((cb) =>
+    cb.addEventListener("change", async () => {
+      pages[Number(cb.dataset.i)].done = cb.checked;
+      await handlers.onSaveWebtoon?.(ch);
+      rerender(chapterId);
+    })
+  );
+  el.querySelectorAll(".wt-upload").forEach((inp) =>
+    inp.addEventListener("change", async () => {
+      const file = inp.files?.[0];
+      if (!file) return;
+      await handlers.onUploadWebtoonPage?.(ch, Number(inp.dataset.i), file);
+      rerender(chapterId);
+    })
+  );
+}
+
 export async function renderCompendium(game, settings, activeSubtab, query = "", handlers = {}) {
   const el = document.getElementById("compendium-content");
   const q = query.trim().toLowerCase();
@@ -508,74 +632,13 @@ export async function renderCompendium(game, settings, activeSubtab, query = "",
               <div class="muted">Turnos: ${c.turnCount}</div>
               <p style="font-size:0.84rem;margin:6px 0;">${esc(c.summary || "Capítulo em andamento...")}</p>
               <button class="btn btn-ghost btn-sm btn-read-chapter" data-ch="${esc(c.chapterId)}">✧ Ler Turnos</button>
-              ${c.isClosed ? `<button class="btn btn-ghost btn-sm btn-webtoon" data-ch="${esc(c.chapterId)}">🎞 Webtoon</button>` : ""}
               <div id="ch-preview-${esc(c.chapterId)}" style="margin-top:8px;"></div>
             </div>`
           )
           .join("")
       : `<div class="card"><div class="muted">Nenhum capítulo registrado.</div></div>`;
 
-    const loadChapter = async (chId) =>
-      chId === game.activeChapter.chapterId
-        ? game.activeChapter
-        : (await getChapterLocal(chId)) ||
-          (await fetchChapterOnDemand(settings, chId, game.usage).catch(() => null));
-
-    // Fase 5.6: 60 prompts de página; cada página mostra a arte de referência do elenco.
-    const cast = { player: game.core.player };
-    for (const n of game.compendium.npcs || []) cast[n.id || n.name] = n;
-    el.querySelectorAll(".btn-webtoon").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const target = document.getElementById(`ch-preview-${btn.dataset.ch}`);
-        const ch = await loadChapter(btn.dataset.ch);
-        if (!ch?.turns?.length) {
-          target.innerHTML = `<span class="muted">Sem turnos salvos para este capítulo.</span>`;
-          return;
-        }
-        let pages = ch.webtoonPrompts;
-        if (!pages?.length) {
-          target.innerHTML = `<span class="muted">Roteirizando ${ch.turns.length} turnos em páginas...</span>`;
-          btn.disabled = true;
-          try {
-            pages = await handlers.onGenerateWebtoon(ch);
-          } catch (err) {
-            target.innerHTML = `<span class="muted">Falha no Webtoon: ${esc(err.message)}</span>`;
-            return;
-          } finally {
-            btn.disabled = false;
-          }
-        }
-        target.innerHTML = pages
-          .map((p, i) => {
-            const refs = p.characters.map((id) => cast[id]).filter(Boolean);
-            return `<div style="border-top:1px solid var(--border);padding:6px 0;font-size:0.8rem;">
-              <div style="color:var(--ice);">Pág. ${p.page}</div>
-              <div style="margin:3px 0;white-space:pre-wrap;">${esc(p.prompt)}</div>
-              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                ${refs
-                  .map((r) => {
-                    const url = resolveMediaUrl(game, r);
-                    return url
-                      ? `<img src="${url}" alt="${esc(r.name || "")}" title="${esc(r.name || "")}" style="height:48px;aspect-ratio:9/16;object-fit:cover;border:1px solid var(--border);" />`
-                      : `<span class="muted">${esc(r.name || "?")} (sem arte)</span>`;
-                  })
-                  .join("")}
-                <button class="btn btn-ghost btn-sm btn-webtoon-copy" data-i="${i}">⧉ Copiar</button>
-              </div>
-            </div>`;
-          })
-          .join("");
-        target.querySelectorAll(".btn-webtoon-copy").forEach((b) => {
-          b.addEventListener("click", () => {
-            const p = pages[Number(b.dataset.i)];
-            const names = p.characters.map((id) => cast[id]?.name).filter(Boolean);
-            handlers.onShowPromptText?.(
-              p.prompt + (names.length ? `\n\nReference art attached for: ${names.join(", ")}.` : "")
-            );
-          });
-        });
-      });
-    });
+    const loadChapter = (chId) => loadChapterAnywhere(game, settings, chId);
 
     el.querySelectorAll(".btn-read-chapter").forEach((btn) => {
       btn.addEventListener("click", async () => {

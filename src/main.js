@@ -31,7 +31,8 @@ import {
   renderPrologueBanner,
   renderQuests,
   renderSheet,
-  renderSphereSelector
+  renderSphereSelector,
+  renderWebtoonStudio
 } from "./ui.js";
 
 let settings = loadSettings();
@@ -143,6 +144,23 @@ const uiHandlers = {
     await persistGameDataLocal(game); // grava o uso do Gemini
     await pushChapterToSupabase(settings, chapter, game.usage).catch((err) => console.warn("Webtoon sem sync:", err));
     return pages;
+  },
+  onSaveWebtoon: async (chapter) => {
+    await saveChapterLocal(chapter);
+    await pushChapterToSupabase(settings, chapter, game.usage).catch((err) => console.warn("Webtoon sem sync:", err));
+  },
+  onUploadWebtoonPage: async (chapter, i, file) => {
+    try {
+      const page = chapter.webtoonPrompts[i];
+      page.mediaId = page.mediaId || `wt_${chapter.chapterId}_p${page.page}`;
+      await attachMediaToId(page.mediaId, file);
+      page.done = true;
+      await uiHandlers.onSaveWebtoon(chapter);
+      await persistGameDataLocal(game);
+      await syncIfConfigured(false); // sobe a imagem pelo sync diferencial de mídia
+    } catch (err) {
+      alert(`Falha ao enviar página: ${err.message}`);
+    }
   },
   onFocusChat: async (focusTarget, text) => {
     switchTab("chat");
@@ -401,6 +419,10 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
         mode: "system",
         text: fellBack ? `⚡ Narrador Épico sem cota — turno narrado por ${usedModel}.` : `⚡ Narrador Épico (${usedModel}, por ${epicBy})`
       });
+    }
+
+    if (typeof parsed.combatLog === "string" && parsed.combatLog.trim()) {
+      transientMessages.push({ mode: "system", text: `⚔ ${parsed.combatLog.trim()}` });
     }
 
     const prevPhase = game.core.meta.phase;
@@ -675,6 +697,14 @@ function bindUI() {
 
   // Modal Settings
   document.getElementById("btn-open-settings").addEventListener("click", openSettingsModal);
+  document.getElementById("btn-open-webtoon").addEventListener("click", () => {
+    document.getElementById("settings-modal").classList.add("hidden");
+    document.getElementById("webtoon-modal").classList.remove("hidden");
+    renderWebtoonStudio(game, settings, uiHandlers);
+  });
+  document.getElementById("btn-close-webtoon").addEventListener("click", () => {
+    document.getElementById("webtoon-modal").classList.add("hidden");
+  });
 
   const muteBtn = document.getElementById("btn-mute");
   const paintMute = () => {

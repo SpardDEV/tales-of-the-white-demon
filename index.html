@@ -156,6 +156,17 @@
     </nav>
   </div>
 
+  <!-- WEBTOON MODAL (Fase 5.6/5.7) — antes do prompt-modal para o prompt abrir por cima -->
+  <div id="webtoon-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>🎞 Estúdio Webtoon</h2>
+        <button id="btn-close-webtoon" class="icon-btn" title="Fechar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/cross.svg)"></i></button>
+      </div>
+      <div class="modal-body" id="webtoon-content"></div>
+    </div>
+  </div>
+
   <!-- PROMPT 9:16 MODAL -->
   <div id="prompt-modal" class="modal hidden">
     <div class="modal-card">
@@ -263,6 +274,10 @@
         </div>
 
         <div class="quota-detail-box" id="quota-detail-box"></div>
+
+        <div class="btn-row">
+          <button id="btn-open-webtoon" class="btn btn-ghost btn-sm">🎞 Estúdio Webtoon</button>
+        </div>
 
         <div class="btn-row">
           <button id="btn-export-save" class="btn btn-ghost btn-sm">◈ Exportar Save (.json)</button>
