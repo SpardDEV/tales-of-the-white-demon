@@ -32,7 +32,7 @@ import {
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
-import { GEMINI_TTS_MODEL, normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
+import { formatTtsCost, GEMINI_TTS_MODEL, getTtsPlaybackState, normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
 import {
   indexMemoryInBackground,
   reindexAllMemoryVectors,
@@ -187,55 +187,102 @@ async function attachMediaToId(mediaId, file) {
   return mediaId;
 }
 
+function clearTtsUiHighlights() {
+  document.querySelectorAll(".msg-p-playable.is-tts-playing").forEach((el) => el.classList.remove("is-tts-playing"));
+  document.querySelectorAll(".btn-tts-speak").forEach((b) => {
+    b.disabled = false;
+    b.textContent = "🔊 Ouvir tudo";
+  });
+}
+
+function setTtsParagraphHighlight(turnIdx, paraIdx) {
+  document.querySelectorAll(".msg-p-playable.is-tts-playing").forEach((el) => el.classList.remove("is-tts-playing"));
+  if (turnIdx == null || paraIdx == null) return;
+  const el = document.querySelector(`.msg-p-playable[data-turn-idx="${turnIdx}"][data-para-idx="${paraIdx}"]`);
+  if (el) el.classList.add("is-tts-playing");
+}
+
+async function runTtsPlayback({ turnIdx, paraIndex = null, btnEl = null }) {
+  const turn = game.activeChapter.turns[turnIdx];
+  if (!turn?.narrative) return;
+
+  const cur = getTtsPlaybackState();
+  if (cur.playing && cur.turnIndex === turnIdx && cur.paraIndex === paraIndex) {
+    stopTts();
+    clearTtsUiHighlights();
+    return;
+  }
+
+  if (isMuted()) {
+    alert("Modo Furtivo (Mute) está ligado no topo direito. Desative para ouvir falas.");
+    return;
+  }
+
+  clearTtsUiHighlights();
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = "🔊 ...";
+  }
+  if (paraIndex != null) setTtsParagraphHighlight(turnIdx, paraIndex);
+
+  try {
+    const pk = paidWithinBudgetKey();
+    const alreadyPaid = isModelPaidUnlockedToday(GEMINI_TTS_MODEL) && !!pk;
+    const res = await speakMessage({
+      text: turn.narrative,
+      mode: turn.mode || "narrative",
+      settings,
+      usage: game.usage,
+      apiKey: alreadyPaid ? pk : freeGeminiKey(),
+      paidApiKey: alreadyPaid ? "" : pk,
+      isPaid: alreadyPaid,
+      onConfirmPaid: confirmPaidForModel,
+      turnIndex: turn.turn || turnIdx + 1,
+      paraIndex,
+      label: turn.mode || "narrative",
+      voiceSpec: turn.voice || null,
+      paraVoices: turn.paraVoices || null,
+      knownNpcs: game.compendium?.npcs || [],
+      onParagraphChange: (pIdx) => {
+        if (pIdx == null) setTtsParagraphHighlight(null, null);
+        else setTtsParagraphHighlight(turnIdx, pIdx);
+      },
+      onFinished: () => {
+        clearTtsUiHighlights();
+        renderHeaderAndQuotas(game, settings);
+        persistGameDataLocal(game);
+      },
+      onError: (err) => {
+        clearTtsUiHighlights();
+        alert(err.message);
+      }
+    });
+    if (btnEl && !res.cancelled) {
+      btnEl.disabled = false;
+      btnEl.textContent = res.freeBrowser ? "🔊 Ouvir tudo" : "⏹ Parar";
+    }
+    if (!res.freeBrowser && !res.cancelled) {
+      turn.ttsPaid = {
+        chars: res.chars,
+        usd: res.usd,
+        brlCents: res.brlCents,
+        withinFreeTier: res.withinFreeTier
+      };
+      const pill = document.querySelector(`.tts-cost-pill[data-turn-idx="${turnIdx}"]`);
+      if (pill) pill.textContent = `Gasto: ${formatTtsCost(res.usd, res.brlCents, res.chars)}`;
+    }
+    await persistGameDataLocal(game);
+    renderHeaderAndQuotas(game, settings);
+  } catch (err) {
+    clearTtsUiHighlights();
+    alert(err.message);
+  }
+}
+
 const uiHandlers = {
   getTtsVoice: () => normalizeTtsFamily(settings.ttsVoice || "gemini-tts"),
-  onSpeakTurn: async (turnIdx, btnEl) => {
-    const turn = game.activeChapter.turns[turnIdx];
-    if (!turn?.narrative) return;
-    if (isMuted()) {
-      alert("Modo Furtivo (Mute) está ligado no topo direito. Desative para ouvir falas.");
-      return;
-    }
-    const prev = btnEl ? btnEl.textContent : "🔊 Ouvir";
-    if (btnEl) {
-      btnEl.disabled = true;
-      btnEl.textContent = "🔊 ...";
-    }
-    try {
-      const pk = paidWithinBudgetKey();
-      const alreadyPaid = isModelPaidUnlockedToday(GEMINI_TTS_MODEL) && !!pk;
-      const res = await speakMessage({
-        text: turn.narrative,
-        mode: turn.mode || "narrative",
-        settings,
-        usage: game.usage,
-        apiKey: alreadyPaid ? pk : freeGeminiKey(),
-        paidApiKey: alreadyPaid ? "" : pk,
-        isPaid: alreadyPaid,
-        onConfirmPaid: confirmPaidForModel,
-        turnIndex: turn.turn || turnIdx + 1,
-        label: turn.mode || "narrative",
-        voiceSpec: turn.voice || null
-      });
-      if (!res.freeBrowser) {
-        turn.ttsPaid = {
-          chars: res.chars,
-          usd: res.usd,
-          brlCents: res.brlCents,
-          withinFreeTier: res.withinFreeTier
-        };
-      }
-      await persistGameDataLocal(game);
-      refreshAllViews();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      if (btnEl) {
-        btnEl.disabled = false;
-        btnEl.textContent = prev;
-      }
-    }
-  },
+  onSpeakTurn: (turnIdx, btnEl) => runTtsPlayback({ turnIdx, paraIndex: null, btnEl }),
+  onSpeakParagraph: (turnIdx, paraIndex) => runTtsPlayback({ turnIdx, paraIndex, btnEl: null }),
   onShowPromptText: (text) => openPromptModal(text),
   onGeneratePrompt: async (type, id) => {
     const entity = findEntity(type, id);
@@ -696,6 +743,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       user: rawInput === "__START_PROLOGUE__" ? "" : rawInput,
       narrative: parsed.narrative || "(Sem resposta narrativa)",
       voice: parsed.voice || null,
+      paraVoices: Array.isArray(parsed.paraVoices) ? parsed.paraVoices : null,
       scenePrompt: parsed.scenePrompt || null,
       sceneMediaId: null
     });

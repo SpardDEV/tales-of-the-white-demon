@@ -206,7 +206,7 @@ REGRAS ESTRITAS DO ÁRBITRO:
    - VISUAL & EVOLUÇÃO DE APARÊNCIA: o protagonista lembra o estilo de Grimmjow apenas no porte, cabelo azul-gelo espetado e olhar ciano — SEM máscara Hollow/osso na mandíbula e SEM sorriso psicopata/cínico fixo. Já a aparência física deve mudar organicamente conforme a cena via "statePatches.playerAppearance" (ex: sujo de sangue, fuligem, geada, roupa rasgada, feridas ou equipamento novo).
    - ZERO EMOÇÃO INVENTADA: é PROIBIDO dizer que o protagonista agiu com cinismo, desdém, sadismo ou "sorriso predador/psicopata" quando ele não deu a entender isso. Se demonstrou medo, dúvida, susto ou cautela, narre exatamente esse estado humano. Só o jogador decide o que ele sente e fala.
    - BOM SENSO IMPLÍCITO: o jogador NÃO precisa digitar ações óbvias (vestir roupas comuns, respirar, manter a arma já em mãos). Assuma lógica cotidiana normal — a menos que um evento específico justifique (ex: acordou saqueado/preso). Puna erros táticos ou descuidos reais, nunca "pegadinhas" literais.
-   - RITMO DIRETO: em turnos comuns, escreva 2 a 4 parágrafos vívidos (~100 a 200 palavras), diretos e cinematográficos.
+   - RITMO DIRETO & VOZES POR PARÁGRAFO: em turnos comuns, escreva 2 a 4 parágrafos vívidos (~100 a 200 palavras). Sempre que houver diálogo, separe UMA pessoa/papel por parágrafo (ex: parágrafo do Narrador, parágrafo da fala do NPC, parágrafo da fala/ação do jogador) e preencha "paraVoices" para que cada parágrafo toque com voz, emoção e velocidade próprias.
 2. MENÇÕES RÁPIDAS (@, #, $, &): quando o jogador usar @Nome (NPC/Golem/Pet), #Item, $Moeda ou &Local, execute a ação coordenada diretamente com aqueles elementos em 1 turno. Sempre atualize "statePatches.nearbyActors" com uma lista curta (ex: ["Aldric", "Golem-1"]) de quem está na cena atual!
 3. PROIBIDO dar habilidades aleatórias fora da linha lógica do jogador (Gelo / Nanogerenciamento Corporal / Golens Autossustentáveis [máx 7] / Estase Temporal / e futuramente Magia Espacial + Mundo de Bolso + Pet de Gelo).
 4. PERSONALIDADE EVOLUTIVA & TRAVA DOS 7 GOLENS:
@@ -248,6 +248,7 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
   "haptico": null,
   "qte_fisico": null,
   "voice": null,
+  "paraVoices": [],
   "epico": false,
   "combatLog": null,
   "negotiation": {
@@ -296,7 +297,7 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
   }
 }
 NOTA COMPÊNDIO (grafo de memória): ao criar/atualizar itens em compendiumUpdates, inclua quando útil "tags": [] e "links": ["Nome_Local_ou_NPC_relacionado"] para conectar o mundo.
-NOTA VOZ TTS ("voice"): opcional {"gender":"M|F|M2|F2","pitch":"-2st..+3st","rate":"0.92..1.08"} quando falar Deusa/NPC feminina ("F"/"F2"), criatura grave ("M2", "-3st") ou narrador tenso; senão deixe null.`;
+NOTA VOZ TTS ("paraVoices" / "voice"): preencha "paraVoices" com 1 objeto por parágrafo de "narrative" (na mesma ordem de \\n\\n): {"role":"narrator|player|npc|deity|system|mana","speaker":"Narrador|Nome_NPC|Você","gender":"M|M2|F|F2","emotion":"tenso, apressado, trêmulo, firme...","pitch":"-2st..+3st"} ("M"=narrador Charon, "M2"=homem/monstro Fenrir, "F"=mulher Kore, "F2"=etérea/Deusa Aoede; "player" usa voz própria do protagonista). Se não usar "paraVoices", use ao menos "voice".`;
 }
 
 export function buildChapterSummaryPrompt(chapter) {

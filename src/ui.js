@@ -1,7 +1,7 @@
 import { canUndo, getChapterLocal, todayKey } from "./state.js";
 import { estimateCostUsd, TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
 import { fetchChapterOnDemand } from "./supabase.js";
-import { estimateTtsCost, formatTtsCost, normalizeTtsFamily } from "./tts.js";
+import { estimateTtsCost, formatTtsCost, normalizeTtsFamily, resolveParagraphVoice, splitParagraphs } from "./tts.js";
 
 function esc(str) {
   return String(str ?? "")
@@ -84,9 +84,26 @@ function renderDevLogAndMiniChat({ kind, id, name, devLog = [], placeholder }) {
 }
 
 function formatNarrativeHtml(text) {
-  return esc(text)
-    .split(/\n{2,}/)
-    .map((chunk) => `<p class="msg-p">${chunk.trim().replace(/\n/g, "<br />")}</p>`)
+  return splitParagraphs(text)
+    .map((chunk) => `<p class="msg-p">${esc(chunk).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+function formatInteractiveNarrativeHtml(turn, turnIdx, ttsVoice, knownNpcs = []) {
+  const paras = splitParagraphs(turn.narrative);
+  return paras
+    .map((chunk, pIdx) => {
+      const aiPV = Array.isArray(turn.paraVoices) ? turn.paraVoices[pIdx] : null;
+      const spec = resolveParagraphVoice({
+        tierKey: ttsVoice,
+        mode: turn.mode || "narrative",
+        paraText: chunk,
+        aiParaVoice: aiPV,
+        turnVoice: turn.voice || null,
+        knownNpcs
+      });
+      return `<p class="msg-p msg-p-playable" data-turn-idx="${turnIdx}" data-para-idx="${pIdx}" title="Toque para ouvir só este parágrafo"><span class="para-voice-chip">▸ ${esc(spec.speaker)} · ${spec.playbackRate.toFixed(1)}x</span>${esc(chunk).replace(/\n/g, "<br />")}</p>`;
+    })
     .join("");
 }
 
@@ -263,10 +280,10 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
 
       html += `<div class="msg msg-ai ${m.cls}">
         <div class="msg-tag">${m.label}</div>
-        <div class="msg-body">${formatNarrativeHtml(t.narrative)}</div>
+        <div class="msg-body">${formatInteractiveNarrativeHtml(t, idx, ttsVoice, game.compendium?.npcs || [])}</div>
         <div class="msg-tts-bar">
-          <span class="tts-cost-pill" title="Toque em Total TTS nas Configurações para ver o extrato completo">${ttsCostTxt}</span>
-          <button type="button" class="btn btn-ghost btn-sm btn-tts-speak" data-turn-idx="${idx}">🔊 Ouvir</button>
+          <span class="tts-cost-pill" data-turn-idx="${idx}" title="Toque em Total TTS nas Configurações para ver o extrato completo">${ttsCostTxt}</span>
+          <button type="button" class="btn btn-ghost btn-sm btn-tts-speak" data-turn-idx="${idx}">🔊 Ouvir tudo</button>
         </div>
         ${sceneBlock}
       </div>`;
@@ -287,6 +304,14 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
   log.querySelectorAll(".btn-tts-speak").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (handlers.onSpeakTurn) handlers.onSpeakTurn(Number(btn.dataset.turnIdx), btn);
+    });
+  });
+
+  log.querySelectorAll(".msg-p-playable").forEach((pEl) => {
+    pEl.addEventListener("click", () => {
+      if (handlers.onSpeakParagraph) {
+        handlers.onSpeakParagraph(Number(pEl.dataset.turnIdx), Number(pEl.dataset.paraIdx), pEl);
+      }
     });
   });
 
