@@ -2,7 +2,8 @@
 // Suporta múltiplas vozes por parágrafo (Narrador, Jogador, NPCs, Deusa, Sistema), ritmo ajustável (1.2x narrador / 1.4x fala) e toque individual por trecho.
 import { TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
 import { todayKey } from "./state.js";
-import { recordGeminiUsage } from "./gemini.js";
+import { recordGeminiUsage, recordVertexCreditUsage } from "./gemini.js";
+import { callVertexProxy, isSupabaseConfigured } from "./supabase.js";
 
 export const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
@@ -203,7 +204,7 @@ function ensureTtsMonth(usage) {
   return month;
 }
 
-function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, voiceName, usedPaid }) {
+function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, voiceName, usedPaid, usedVertex = false }) {
   ensureTtsMonth(usage);
   const actualUsd = usedPaid ? usd : 0;
   usage.ttsMonthChars = (usage.ttsMonthChars || 0) + chars;
@@ -219,11 +220,12 @@ function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, voiceNa
       brlCents,
       actualUsd,
       withinFreeTier: !usedPaid,
+      usedVertex,
       tier: voiceName,
       at: new Date().toISOString()
     }
   ].slice(-40);
-  return { withinFreeTier: !usedPaid, actualUsd };
+  return { withinFreeTier: !usedPaid, actualUsd, usedVertex };
 }
 
 function pcmBase64ToWavUrl(base64, mimeType = "") {
@@ -394,24 +396,56 @@ export async function speakMessage({
     return { chars: String(text || "").length, usd: 0, brlCents: 0, freeBrowser: true, withinFreeTier: true, tierKey: "browser" };
   }
 
+  const useVertex = Boolean(settings?.vertexProxyEnabled && isSupabaseConfigured(settings));
   const freeKey = (apiKey || settings?.geminiKey || "").trim();
   const paidKey = (paidApiKey || settings?.geminiPaidKey || "").trim();
-  if (!freeKey && !paidKey) {
+  if (!useVertex && !freeKey && !paidKey) {
     activeTarget = null;
-    throw new Error("Configure sua Gemini API Key em ⚙ Configurações (ou mude para Navegador Local).");
+    throw new Error("Configure sua Gemini API Key ou ative a ponte Vertex AI em ⚙ Configurações.");
   }
 
-  let usedPaid = Boolean(isPaid && !freeKey);
+  let usedPaid = !useVertex && Boolean(isPaid && !freeKey);
   let activeKey = usedPaid ? paidKey : (freeKey || paidKey);
-  usedPaid = activeKey === paidKey && activeKey !== freeKey;
+  usedPaid = !useVertex && activeKey === paidKey && activeKey !== freeKey;
 
   const sendTtsSegment = async (seg) => {
-    const cacheKey = `${GEMINI_TTS_MODEL}|${seg.spec.voiceName}|${seg.spec.tone}|${seg.text}`;
+    const cacheKey = `${useVertex ? "vertex-tts" : GEMINI_TTS_MODEL}|${seg.spec.voiceName}|${seg.spec.tone}|${seg.text}`;
     if (ttsWavCache.has(cacheKey)) {
       return { ...ttsWavCache.get(cacheKey), fromCache: true };
     }
 
     const promptText = `Leia em português do Brasil com ritmo natural e ágil, interpretação ${seg.spec.tone}, sem adicionar palavras:\n${seg.text}`;
+
+    if (useVertex) {
+      const vData = await callVertexProxy(
+        settings,
+        {
+          action: "tts",
+          model: "gemini-2.5-flash-tts",
+          promptText,
+          voiceName: seg.spec.voiceName
+        },
+        usage
+      );
+      const inline = vData?.inlineData;
+      if (!inline?.data) throw new Error("Vertex TTS não retornou áudio.");
+      const um = vData.usageMetadata || {};
+      const pTok = um.promptTokenCount || 0;
+      const oTok = (um.candidatesTokenCount || 0) + (um.thoughtsTokenCount || 0);
+      const realUsd = (pTok || oTok)
+        ? (pTok * 0.5 + oTok * 10.0) / 1e6
+        : estimateTtsCost(seg.text, family, mode, false, seg.spec).usd;
+      recordVertexCreditUsage(usage, {
+        model: vData.model || "gemini-2.5-flash-tts",
+        costUsd: realUsd,
+        usageMetadata: um
+      });
+      const wavUrl = pcmBase64ToWavUrl(inline.data, inline.mimeType);
+      const result = { wavUrl, usd: realUsd, brlCents: realUsd * USD_TO_BRL_REF * 100, fromCache: false, usedVertex: true };
+      rememberWavCache(cacheKey, result);
+      return result;
+    }
+
     const callOnce = async (key) => {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_TTS_MODEL)}:generateContent?key=${encodeURIComponent(key)}`;
       const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -505,7 +539,8 @@ export async function speakMessage({
     usd: firstUsd,
     brlCents: firstBrl,
     voiceName: voiceSummary,
-    usedPaid
+    usedPaid,
+    usedVertex: useVertex
   });
   const historyItem = usage.ttsHistory?.[usage.ttsHistory.length - 1] || null;
 

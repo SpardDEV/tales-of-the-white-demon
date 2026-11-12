@@ -1,6 +1,6 @@
 import { canUndo, getChapterLocal, todayKey } from "./state.js";
 import { estimateCostUsd, TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
-import { fetchChapterOnDemand } from "./supabase.js";
+import { fetchChapterOnDemand, isSupabaseConfigured } from "./supabase.js";
 import { estimateTtsCost, formatTtsCost, normalizeTtsFamily, resolveParagraphVoice, splitParagraphs } from "./tts.js";
 
 function esc(str) {
@@ -37,7 +37,8 @@ function renderMediaControls({ type, id, imageUrl, hasInfo = true }) {
 
   const btns = `<div class="card-actions">
     ${hasInfo
-      ? `<button class="btn btn-ghost btn-sm btn-gen-prompt" data-type="${esc(type)}" data-id="${esc(id)}">✧ Prompt 9:16</button>`
+      ? `<button class="btn btn-mana btn-sm btn-gen-image" data-type="${esc(type)}" data-id="${esc(id)}">✦ Gerar no App</button>
+         <button class="btn btn-ghost btn-sm btn-gen-prompt" data-type="${esc(type)}" data-id="${esc(id)}">✧ Prompt 9:16</button>`
       : ""}
     <label class="btn btn-ice btn-sm file-label">
       ◈ ${imageUrl ? "Trocar 9:16" : "Anexar 9:16"}
@@ -128,15 +129,25 @@ function costReport(usage, settings) {
   const ttsUsd = usage.ttsMonthKey === month ? usage.ttsMonthUsd || 0 : 0;
   const ttsBillableUsd = usage.ttsMonthKey === month ? usage.ttsMonthBillableUsd || 0 : 0;
   const ttsCents = ttsUsd * USD_TO_BRL_REF * 100;
+  const vertexUsd = usage.vertexMonthKey === month ? usage.vertexMonthUsd || 0 : 0;
+  const vertexModels = usage.vertexMonthKey === month ? usage.vertexMonthModels || {} : {};
+  const vertexActive = Boolean(settings.vertexProxyEnabled && isSupabaseConfigured(settings));
   const ttsFam = normalizeTtsFamily(settings.ttsVoice || "gemini-tts");
-  const ttsModeTxt = ttsFam === "browser" ? "Navegador R$ 0" : "Gemini TTS (Free→Paga)";
+  const ttsModeTxt = ttsFam === "browser"
+    ? "Navegador R$ 0"
+    : (vertexActive ? "Vertex AI (Créditos GCP)" : "Gemini TTS (Free→Paga)");
+  const vertexLines = Object.entries(vertexModels)
+    .map(([name, m]) => `  ${name}: ${m.req} req · US$ ${Number(m.usd || 0).toFixed(4)}`)
+    .join("\n");
   return (
     `Heimdall — proteção por modelo (R$ 30 ≈ US$ 5):\n` +
-    `Chave Paga no mês ${month}: US$ ${paidSpent.toFixed(3)} / US$ ${budget} (${pct}%)\n` +
+    `Chave Paga (R$ 61/mês) em ${month}: US$ ${paidSpent.toFixed(3)} / US$ ${budget} (${pct}%)\n` +
+    `Créditos GCP / Vertex AI (R$ 1.830,55) em ${month}: US$ ${vertexUsd.toFixed(4)} (~R$ ${(vertexUsd * USD_TO_BRL_REF).toFixed(2)})\n` +
+    (vertexLines ? `${vertexLines}\n` : "") +
     `Economizado na Chave Free (US$ 0 reais): ~US$ ${freeRef.toFixed(3)}\n` +
     paidUnlockNote +
-    `TTS (${ttsModeTxt} · ${ttsChars.toLocaleString("pt-BR")} chars/mês): ref. ~${ttsCents.toFixed(2)}¢ · cobrado US$ ${ttsBillableUsd.toFixed(4)}\n` +
-    `Hoje (todas as chamadas):\n${lines(usage.models || {})}\n` +
+    `TTS (${ttsModeTxt} · ${ttsChars.toLocaleString("pt-BR")} chars/mês): ref. ~${ttsCents.toFixed(2)}¢ · cobrado AI Studio US$ ${ttsBillableUsd.toFixed(4)}\n` +
+    `Hoje (todas as chamadas AI Studio):\n${lines(usage.models || {})}\n` +
     `${keysInfo}\n` +
     `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"} · classificador ${settings.geminiClassifierModel || "desligado"}`
   );
@@ -162,7 +173,7 @@ export function renderTtsBreakdown(usage) {
     .slice()
     .reverse()
     .map((h) => {
-      const tag = h.withinFreeTier === false ? "Chave Paga" : "Cota Free";
+      const tag = h.usedVertex ? "Vertex GCP" : (h.withinFreeTier === false ? "Chave Paga" : "Cota Free");
       return `• Turno ${h.turn ?? "?"} (${h.label}): ${formatTtsCost(h.usd, h.brlCents, h.chars)} [${h.tier} · ${tag}]`;
     })
     .join("\n");
@@ -265,7 +276,8 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
         ? `<div class="scene-art-box">
             ${sceneImg ? `<img class="scene-art-thumb" src="${sceneImg}" alt="Cena 9:16" />` : ""}
             <div class="card-actions">
-              ${t.scenePrompt ? `<button class="btn btn-ghost btn-sm btn-scene-prompt" data-turn-idx="${idx}">✧ Prompt Cena 9:16</button>` : ""}
+              ${t.scenePrompt ? `<button class="btn btn-mana btn-sm btn-scene-gen-image" data-turn-idx="${idx}">✦ Gerar no App</button>
+              <button class="btn btn-ghost btn-sm btn-scene-prompt" data-turn-idx="${idx}">✧ Prompt Cena 9:16</button>` : ""}
               <label class="btn btn-ice btn-sm file-label">
                 ◈ ${sceneImg ? "Trocar Cena" : "Anexar Cena 9:16"}
                 <input type="file" accept="image/*" class="input-attach-scene" data-turn-idx="${idx}" hidden />
@@ -311,6 +323,14 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
     pEl.addEventListener("click", () => {
       if (handlers.onSpeakParagraph) {
         handlers.onSpeakParagraph(Number(pEl.dataset.turnIdx), Number(pEl.dataset.paraIdx), pEl);
+      }
+    });
+  });
+
+  log.querySelectorAll(".btn-scene-gen-image").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (handlers.onGenerateSceneImage) {
+        handlers.onGenerateSceneImage(Number(btn.dataset.turnIdx), btn);
       }
     });
   });
@@ -416,7 +436,7 @@ export function renderSheet(game, handlers = {}) {
       </div>`
     : `<div class="card">
         <h3>◈ Consciência da Mana (Dormente)</h3>
-        <div class="muted">Ainda não nasceu por ação e reação (~Lv 45-50). O /system permanece mudo e objetivo.</div>
+        <div class="muted">Ainda dormente — só desperta em momento orgânico de evolução. O /system permanece mudo e objetivo.</div>
       </div>`;
 
   const skillsHtml = skills.length
@@ -427,12 +447,22 @@ export function renderSheet(game, handlers = {}) {
           const ph = focusKind === "mana_skill"
             ? "Conversar com a Mana / evoluir esta habilidade..."
             : "Testar, anotar ou treinar esta habilidade...";
+          const limitsTxt = s.limitsDiscovered === false
+            ? "??? (descubra os limites testando em cena)"
+            : (s.hardLimits || "—");
+          const hasHiddenNorth = Array.isArray(s.discoveredNorth) || s.limitsDiscovered === false;
+          const northList = Array.isArray(s.discoveredNorth)
+            ? s.discoveredNorth
+            : (hasHiddenNorth ? [] : (Array.isArray(s.evolutionNorth) ? s.evolutionNorth : []));
+          const northTxt = hasHiddenNorth
+            ? (northList.length ? `${northList.map(esc).join(" → ")} → ???` : "??? (caminhos ocultos — descubra jogando)")
+            : northList.map(esc).join(" → ");
           return `<div class="card skill-card">
             <h3>❄ ${esc(s.name)} <span class="tag-pill">Tier ${esc(s.tier || "?")} · Lv.${s.level || 1}</span></h3>
-            <div style="font-size:0.83rem;margin-bottom:4px;"><b>Escopo Atual:</b> ${esc(s.currentScope || "—")}</div>
-            <div style="font-size:0.82rem;color:#fbbf24;margin-bottom:4px;"><b>Trava Lógica:</b> ${esc(s.hardLimits || "—")}</div>
-            ${Array.isArray(s.evolutionNorth) && s.evolutionNorth.length
-              ? `<div style="font-size:0.8rem;" class="muted"><b>Norte Evolutivo:</b> ${s.evolutionNorth.map(esc).join(" → ")}</div>`
+            <div style="font-size:0.83rem;margin-bottom:4px;"><b>Percepção Atual:</b> ${esc(s.currentScope || "—")}</div>
+            <div style="font-size:0.82rem;color:#fbbf24;margin-bottom:4px;"><b>Limites Descobertos:</b> ${esc(limitsTxt)}</div>
+            ${northTxt
+              ? `<div style="font-size:0.8rem;" class="muted"><b>Caminhos Vislumbrados:</b> ${northTxt}</div>`
               : ""}
             ${Array.isArray(s.forcedScars) && s.forcedScars.length
               ? `<div style="font-size:0.8rem;color:#f87171;margin-top:4px;">▲ Sobrecargas: ${s.forcedScars.map(esc).join(" | ")}</div>`
@@ -523,7 +553,7 @@ export function renderSheet(game, handlers = {}) {
 
   const pocketHtml = spatialPocket.unlocked
     ? `<pre class="pre-sheet">✦ ${esc(spatialPocket.name)}\n◈ Mana Estocada: ${spatialPocket.storedMana} / ${spatialPocket.storedManaCap}\n❖ Golens Guardados: ${(spatialPocket.golemsInside || []).join(", ") || "Nenhum"}\n⚔ Arsenal: ${(spatialPocket.storedItems || []).join(", ") || "Vazio"}</pre>`
-    : `<div class="muted">Bloqueado — reservado para o desbloqueio orgânico de Magia Espacial (~Lv 400).</div>`;
+    : `<div class="muted">Bloqueado — reservado para uma magia avançada ainda desconhecida.</div>`;
 
   let petHtml = `<div class="muted">Nenhum companheiro criogênico vinculado ainda.</div>`;
   if (pet.unlocked) {
@@ -784,7 +814,7 @@ export async function renderCompendium(game, settings, activeSubtab, query = "",
       });
 
       return `<div class="card">
-        <h3>${esc(item.name)} ${item.rank ? `<span class="tag-pill">${esc(item.rank)}</span>` : ""}</h3>
+        <h3>${esc(item.name)} ${item.nameKnown === false ? `<span class="tag-pill">? Nome desconhecido</span>` : ""} ${item.rank ? `<span class="tag-pill">${esc(item.rank)}</span>` : ""}</h3>
         <div class="card-flex">
           ${media.thumb}
           <div style="flex:1;min-width:0;">
@@ -810,6 +840,13 @@ export async function renderCompendium(game, settings, activeSubtab, query = "",
 
 function bindMediaHandlers(container, handlers) {
   if (!handlers) return;
+  container.querySelectorAll(".btn-gen-image").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (handlers.onGenerateImage) {
+        handlers.onGenerateImage(btn.dataset.type, btn.dataset.id, btn);
+      }
+    });
+  });
   container.querySelectorAll(".btn-gen-prompt").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (handlers.onGeneratePrompt) {

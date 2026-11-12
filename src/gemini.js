@@ -51,6 +51,38 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?", isPaid = fa
   return { promptTokens, outputTokens, totalTokens: tokens };
 }
 
+export function recordVertexCreditUsage(usage, { model = "vertex", costUsd = 0, usageMetadata = null }) {
+  const day = todayKey();
+  if (usage.dayKey !== day) {
+    usage.dayKey = day;
+    usage.geminiRequests = 0;
+    usage.geminiTokens = 0;
+    usage.recentRequestTimestamps = [];
+    usage.models = {};
+  }
+  const month = day.slice(0, 7);
+  if (usage.monthKey !== month) {
+    usage.monthKey = month;
+    usage.monthModels = {};
+    usage.paidMonthModels = {};
+    usage.vertexMonthUsd = 0;
+    usage.vertexMonthModels = {};
+  }
+  const promptTokens = usageMetadata?.promptTokenCount || 0;
+  const outputTokens = (usageMetadata?.candidatesTokenCount || 0) + (usageMetadata?.thoughtsTokenCount || 0);
+  const totalTokens = usageMetadata?.totalTokenCount || promptTokens + outputTokens;
+  usage.geminiRequests += 1;
+  usage.geminiTokens += totalTokens;
+  usage.vertexMonthUsd = (usage.vertexMonthUsd || 0) + (Number(costUsd) || 0);
+  for (const bucket of [(usage.models ||= {}), (usage.vertexMonthModels ||= {})]) {
+    const m = (bucket[model] ||= { req: 0, in: 0, out: 0 });
+    m.req += 1;
+    m.in += promptTokens;
+    m.out += outputTokens;
+  }
+  return { promptTokens, outputTokens, totalTokens };
+}
+
 function buildThinkingConfig(m, fastMode) {
   if (!fastMode || !m || m.startsWith("gemma")) return null;
   if (/^gemini-2\.5-(flash|lite)/i.test(m)) return { thinkingBudget: 0 };

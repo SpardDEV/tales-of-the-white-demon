@@ -387,6 +387,8 @@ const SYNCED_SETTING_KEYS = [
   "geminiPaidKey",
   "ttsKey",
   "ttsVoice",
+  "vertexProxyEnabled",
+  "vertexImageModel",
   "geminiModel",
   "geminiEpicModel",
   "geminiClassifierModel",
@@ -451,4 +453,31 @@ export async function matchMemoryVectors(settings, queryEmbedding, matchCount = 
     },
     usage
   );
+}
+
+export async function callVertexProxy(settings, payload, usage = null) {
+  if (!settings?.supabaseUrl || !settings?.supabaseAnonKey) {
+    throw new Error("Configure URL e Anon Key do Supabase nas Configurações.");
+  }
+  if (!loadSession()) {
+    throw new Error("Entre com seu e-mail e senha do Supabase nas Configurações para usar a ponte Vertex AI.");
+  }
+  if (usage) usage.supabaseRequests = (usage.supabaseRequests || 0) + 1;
+  const token = await accessToken(settings);
+  const res = await fetch(`${baseUrl(settings)}/functions/v1/vertex-proxy`, {
+    method: "POST",
+    headers: {
+      ...headers(settings),
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error("Edge Function 'vertex-proxy' ainda não publicada no seu Supabase.");
+    }
+    throw new Error(data?.error || `Vertex Proxy (${res.status})`);
+  }
+  return data;
 }

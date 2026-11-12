@@ -185,6 +185,31 @@
     </div>
   </div>
 
+  <!-- IMAGE REVIEW MODAL -->
+  <div id="image-review-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>✦ Arte 9:16 Gerada no App</h2>
+        <button id="btn-close-img-review" class="icon-btn" title="Fechar"><i class="mono-icon ico" style="--i:url(assets_curated/icons/ui/cross.svg)"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="img-review-cost" class="cost-pill">Custo: —</div>
+        <div class="img-review-wrap">
+          <img id="img-review-preview" src="" alt="Prévia 9:16" />
+        </div>
+        <div id="img-review-stage1" class="btn-row" style="margin-top:10px;justify-content:space-between;gap:8px;">
+          <button id="btn-img-approve" type="button" class="btn btn-mana">✓ Aprovar</button>
+          <button id="btn-img-disapprove" type="button" class="btn btn-danger">✕ Desaprovar</button>
+        </div>
+        <div id="img-review-stage2" class="btn-row hidden" style="margin-top:10px;gap:8px;flex-wrap:wrap;">
+          <div class="muted" style="width:100%;font-size:0.8rem;">Desaprovada — escolha o próximo passo:</div>
+          <button id="btn-img-retry" type="button" class="btn btn-ice btn-sm">↻ Gerar de novo (Gemini/Vertex)</button>
+          <button id="btn-img-copy-chatgpt" type="button" class="btn btn-ghost btn-sm">✧ Copiar Prompt (ChatGPT)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- SETTINGS MODAL -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-card">
@@ -259,12 +284,32 @@
         </label>
 
         <div class="form-group">
-          <label for="cfg-tts-voice">🔊 Voz TTS (usa sua Gemini Key Free → Paga · IA alterna M/F + tom)</label>
+          <label for="cfg-tts-voice">🔊 Voz TTS (usa Vertex GCP se ativado abaixo, senão Gemini Key)</label>
           <select id="cfg-tts-voice">
             <option value="gemini-tts">Gemini TTS Automático (Charon/Fenrir M · Kore/Aoede F)</option>
             <option value="browser">Navegador Local (R$ 0 · offline)</option>
           </select>
         </div>
+
+        <label class="check-row" for="cfg-vertex-enabled">
+          <input id="cfg-vertex-enabled" type="checkbox" />
+          <span>⚡ Roteamento Vertex AI via Supabase (usa seus R$ 1.830,55 GCP em TTS &amp; Imagens 9:16, sem gastar os R$ 61/mês)</span>
+        </label>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-vertex-img-model">Modelo de Arte 9:16 (Vertex / App)</label>
+            <select id="cfg-vertex-img-model">
+              <option value="imagen-4.0-fast-generate-001">imagen-4.0-fast-generate-001 (US$ 0.02/img · Recomendado)</option>
+              <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (~US$ 0.004/img · Flash)</option>
+              <option value="imagen-4.0-generate-001">imagen-4.0-generate-001 (US$ 0.04/img · Padrão)</option>
+              <option value="imagen-4.0-ultra-generate-001">imagen-4.0-ultra-generate-001 (US$ 0.06/img · Ultra)</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
+            <button id="btn-test-vertex" type="button" class="btn btn-ghost btn-sm" style="width:100%;">⚡ Testar Ponte Vertex</button>
+          </div>
+        </div>
+        <div id="vertex-test-status" class="muted" style="font-size:0.78rem;margin-bottom:8px;"></div>
 
         <hr class="sep" />
 

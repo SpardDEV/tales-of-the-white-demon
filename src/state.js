@@ -524,11 +524,21 @@ function upsertByKey(list, incoming, key = "id") {
     const mergedFacts = Array.isArray(prev.knownFacts) || Array.isArray(cleanIncoming.knownFacts)
       ? Array.from(new Set([...(prev.knownFacts || []), ...(cleanIncoming.knownFacts || [])]))
       : undefined;
+    const mergedNorth = Array.isArray(prev.discoveredNorth) || Array.isArray(cleanIncoming.discoveredNorth)
+      ? Array.from(new Set([...(prev.discoveredNorth || []), ...(cleanIncoming.discoveredNorth || [])]))
+      : undefined;
     const prevLogs = Array.isArray(prev.devLog) ? prev.devLog : [];
     const nextLogs = logEntry ? [...prevLogs, logEntry].slice(-25) : prevLogs;
     list[idx] = { ...prev, ...cleanIncoming, devLog: nextLogs };
     if (!cleanIncoming.mediaId && prev.mediaId) list[idx].mediaId = prev.mediaId;
     if (mergedFacts) list[idx].knownFacts = mergedFacts;
+    if (mergedNorth) list[idx].discoveredNorth = mergedNorth;
+    if (prev.limitsDiscovered === true && cleanIncoming.limitsDiscovered === undefined) {
+      list[idx].limitsDiscovered = true;
+    }
+    if (prev.nameKnown === true && cleanIncoming.nameKnown === undefined) {
+      list[idx].nameKnown = true;
+    }
   } else {
     const devLog = logEntry ? [logEntry] : Array.isArray(cleanIncoming.devLog) ? cleanIncoming.devLog : [];
     list.push({ ...cleanIncoming, [key]: idVal, devLog });
@@ -834,20 +844,23 @@ export function createTestGameData() {
       name: "Semente Criogênica",
       tier: "F",
       level: 1,
-      currentScope: "Congelar superfícies ao toque e lançar estilhaços de gelo a curta distância.",
+      currentScope: "Você sente um frio estranho condensar na ponta dos dedos ao focar sua mana; acabou de congelar a umidade da palma da mão, sem saber ainda até onde esse poder vai.",
       hardLimits: "Até ~3 m; estilhaços do tamanho de pregos; 5 mana por uso.",
+      limitsDiscovered: false,
       evolutionNorth: ["Lança de Gelo", "Estase de Objetos"],
+      discoveredNorth: [],
       devLog: []
     }
   ];
   core.quests.active = [
     { id: "q_test", title: "Sair da Masmorra Rachada", description: "Encontre a saída antes que a coisa nas profundezas acorde.", status: "active" }
   ];
-  core.nearbyActors = ["Kaelen"];
+  core.nearbyActors = ["Mercenária da Besta"];
   game.compendium.npcs = [
     {
       id: "npc_kaelen",
-      name: "Kaelen",
+      name: "Mercenária da Besta",
+      nameKnown: false,
       personality: "Mercenária cínica, sobrevivente, fala pouco e cobra tudo.",
       relationship: "Desconfiada — acabou de te encontrar caído.",
       appearance: "Mulher de cabelo curto grisalho, armadura de couro remendada, besta pesada nas costas, cicatriz no queixo."
@@ -884,10 +897,10 @@ export function createTestGameData() {
       voice: { gender: "M", pitch: "-1st", rate: "1.20" },
       paraVoices: [
         { role: "narrator", speaker: "Narrador", gender: "M", emotion: "tenso e sombrio", pitch: "-1st" },
-        { role: "npc", speaker: "Kaelen", gender: "F", emotion: "desconfiada e ríspida", pitch: "+1st" }
+        { role: "npc", speaker: "Mercenária da Besta", gender: "F", emotion: "desconfiada e ríspida", pitch: "+1st" }
       ],
       narrative:
-        "Você desperta com a têmpora latejando sobre lajes úmidas da Masmorra Rachada. Uma bruma fria escorre pelas frestas do teto cobertas por marcas fundas de garras, enquanto uma camada fina de geada estala sob os dedos da sua mão direita.\n\nA poucos passos, encostada num pilar quebrado, Kaelen aponta uma besta pesada para o seu peito. Os olhos cinzentos dela medem sua respiração antes de murmurar:\n— Se vai congelar alguma coisa, garoto, aponte para o corredor escuro atrás de você. Tem algo arrastando garras lá dentro."
+        "Você desperta com a têmpora latejando sobre lajes úmidas da Masmorra Rachada. Uma bruma fria escorre pelas frestas do teto cobertas por marcas fundas de garras, enquanto uma camada fina de geada estala sob os dedos da sua mão direita.\n\nA poucos passos, encostada num pilar quebrado, uma desconhecida de cabelo curto grisalho aponta uma besta pesada para o seu peito. Os olhos cinzentos dela medem sua respiração antes de murmurar:\n— Se vai congelar alguma coisa, garoto, aponte para o corredor escuro atrás de você. Tem algo arrastando garras lá dentro."
     }
   ];
   game.activeChapter.turnCount = 1;

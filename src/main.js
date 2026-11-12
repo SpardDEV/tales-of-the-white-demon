@@ -19,6 +19,7 @@ import { buildChapterSummaryPrompt, buildClassifierPrompt, buildContextPayload, 
 import { enforceTurnRules } from "./rules.js";
 import { callGemini, listGeminiModels } from "./gemini.js";
 import {
+  callVertexProxy,
   isSupabaseConfigured,
   pullGameFromSupabase,
   pullUserSettingsFromSupabase,
@@ -30,7 +31,7 @@ import {
   supabaseUserEmail
 } from "./supabase.js";
 import { SphereGlobe } from "./globe.js";
-import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
+import { buildChatGptPrompt, compressImageToWebP9x16, generateImage9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
 import { formatTtsCost, GEMINI_TTS_MODEL, getTtsPlaybackState, normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
 import {
@@ -60,6 +61,7 @@ let viewingSphereId = null;
 let activeCompSubtab = "npcs";
 let isSending = false;
 let transientMessages = [];
+let pendingImageReview = null;
 
 function freeGeminiKey() {
   const domFree = typeof document !== "undefined" ? document.getElementById("cfg-gemini-key")?.value?.trim() || "" : "";
@@ -179,12 +181,73 @@ async function openPromptModal(promptText) {
   }
 }
 
-async function attachMediaToId(mediaId, file) {
-  const webpDataUrl = await compressImageToWebP9x16(file);
+async function attachWebpToId(mediaId, webpDataUrl) {
   const saved = await saveMediaLocal(mediaId, webpDataUrl);
   game.mediaCache[mediaId] = saved;
   game.usage.dirtyMediaIds = Array.from(new Set([...(game.usage.dirtyMediaIds || []), mediaId]));
   return mediaId;
+}
+
+async function attachMediaToId(mediaId, file) {
+  const webpDataUrl = await compressImageToWebP9x16(file);
+  return attachWebpToId(mediaId, webpDataUrl);
+}
+
+function showImageReviewModal(reviewState) {
+  pendingImageReview = reviewState;
+  const { result } = reviewState;
+  const costBrl = (Number(result.brlCents) || 0) / 100;
+  document.getElementById("img-review-cost").textContent =
+    `Custo: US$ ${Number(result.costUsd || 0).toFixed(4)} (~R$ ${costBrl.toFixed(3)}) · ${result.model} · ${result.sourceLabel}`;
+  document.getElementById("img-review-preview").src = result.webpDataUrl;
+  document.getElementById("img-review-stage1").classList.remove("hidden");
+  document.getElementById("img-review-stage2").classList.add("hidden");
+  document.getElementById("image-review-modal").classList.remove("hidden");
+}
+
+async function runInAppImageGeneration(targetSpec, btnEl = null) {
+  let promptText = "";
+  if (targetSpec.kind === "entity") {
+    const entity = findEntity(targetSpec.type, targetSpec.id);
+    if (!entity) return;
+    promptText = buildChatGptPrompt(targetSpec.type, entity, settings.artStylePrompt);
+  } else if (targetSpec.kind === "scene") {
+    const turn = game.activeChapter.turns[targetSpec.turnIdx];
+    if (!turn?.scenePrompt) return;
+    promptText = turn.scenePrompt;
+  } else {
+    return;
+  }
+
+  const prevText = btnEl ? btnEl.textContent : "";
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = "✦ Gerando...";
+  }
+  try {
+    const pk = paidWithinBudgetKey();
+    const imgModel = "gemini-2.5-flash-image";
+    const alreadyPaid = isModelPaidUnlockedToday(imgModel) && !!pk;
+    const result = await generateImage9x16({
+      prompt: promptText,
+      settings,
+      usage: game.usage,
+      apiKey: alreadyPaid ? pk : freeGeminiKey(),
+      paidApiKey: alreadyPaid ? "" : pk,
+      isPaid: alreadyPaid,
+      onConfirmPaid: confirmPaidForModel
+    });
+    await persistGameDataLocal(game);
+    renderHeaderAndQuotas(game, settings);
+    showImageReviewModal({ ...targetSpec, promptText, result });
+  } catch (err) {
+    alert(`Falha ao gerar arte: ${err.message}`);
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = prevText || "✦ Gerar no App";
+    }
+  }
 }
 
 function clearTtsUiHighlights() {
@@ -289,6 +352,8 @@ const uiHandlers = {
     if (!entity) return;
     await openPromptModal(buildChatGptPrompt(type, entity, settings.artStylePrompt));
   },
+  onGenerateImage: (type, id, btnEl) => runInAppImageGeneration({ kind: "entity", type, id }, btnEl),
+  onGenerateSceneImage: (turnIdx, btnEl) => runInAppImageGeneration({ kind: "scene", turnIdx }, btnEl),
   onUploadImage: async (type, id, file) => {
     try {
       const entity = findEntity(type, id);
@@ -822,6 +887,9 @@ function fillSettingsModalFields() {
   const epManual = document.getElementById("cfg-epic-manual");
   if (epManual) epManual.checked = settings.epicManualOnly === true;
   setSelectValue("cfg-tts-voice", normalizeTtsFamily(settings.ttsVoice || "gemini-tts"));
+  const vEnabled = document.getElementById("cfg-vertex-enabled");
+  if (vEnabled) vEnabled.checked = settings.vertexProxyEnabled === true;
+  setSelectValue("cfg-vertex-img-model", settings.vertexImageModel || "imagen-4.0-fast-generate-001");
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
@@ -1039,6 +1107,60 @@ function bindUI() {
     }
   });
 
+  // Image Review Modal
+  document.getElementById("btn-close-img-review")?.addEventListener("click", () => {
+    pendingImageReview = null;
+    document.getElementById("image-review-modal").classList.add("hidden");
+  });
+  document.getElementById("btn-img-approve")?.addEventListener("click", async () => {
+    if (!pendingImageReview) return;
+    const rev = pendingImageReview;
+    try {
+      if (rev.kind === "entity") {
+        const entity = findEntity(rev.type, rev.id);
+        if (entity) {
+          const mediaId = entity.mediaId || `media_${rev.type}_${String(rev.id).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+          await attachWebpToId(mediaId, rev.result.webpDataUrl);
+          entity.mediaId = mediaId;
+          delete entity.imageWebp;
+        }
+      } else if (rev.kind === "scene") {
+        const turn = game.activeChapter.turns[rev.turnIdx];
+        if (turn) {
+          const mediaId = turn.sceneMediaId || `scene_${game.activeChapter.chapterId}_t${turn.turn || rev.turnIdx}`;
+          await attachWebpToId(mediaId, rev.result.webpDataUrl);
+          turn.sceneMediaId = mediaId;
+        }
+      }
+      pendingImageReview = null;
+      document.getElementById("image-review-modal").classList.add("hidden");
+      await persistGameDataLocal(game);
+      refreshAllViews();
+      await syncIfConfigured(false);
+    } catch (err) {
+      alert(`Falha ao salvar arte aprovada: ${err.message}`);
+    }
+  });
+  document.getElementById("btn-img-disapprove")?.addEventListener("click", () => {
+    document.getElementById("img-review-stage1")?.classList.add("hidden");
+    document.getElementById("img-review-stage2")?.classList.remove("hidden");
+  });
+  document.getElementById("btn-img-retry")?.addEventListener("click", async () => {
+    if (!pendingImageReview) return;
+    const targetSpec = pendingImageReview.kind === "entity"
+      ? { kind: "entity", type: pendingImageReview.type, id: pendingImageReview.id }
+      : { kind: "scene", turnIdx: pendingImageReview.turnIdx };
+    const retryBtn = document.getElementById("btn-img-retry");
+    await runInAppImageGeneration(targetSpec, retryBtn);
+  });
+  document.getElementById("btn-img-copy-chatgpt")?.addEventListener("click", async () => {
+    if (!pendingImageReview) return;
+    const promptTxt = pendingImageReview.promptText;
+    pendingImageReview = null;
+    document.getElementById("image-review-modal").classList.add("hidden");
+    await openPromptModal(promptTxt);
+  });
+
   // Modal Settings
   document.getElementById("btn-open-settings").addEventListener("click", openSettingsModal);
   document.getElementById("btn-open-webtoon").addEventListener("click", () => {
@@ -1063,6 +1185,29 @@ function bindUI() {
     saveSettings(settings);
     paintMute();
   });
+  document.getElementById("btn-test-vertex")?.addEventListener("click", async (e) => {
+    syncSettingsFromModal();
+    const btnEl = e.currentTarget;
+    const statusEl = document.getElementById("vertex-test-status");
+    const prev = btnEl.textContent;
+    btnEl.disabled = true;
+    btnEl.textContent = "Testando...";
+    if (statusEl) statusEl.textContent = "Consultando Edge Function vertex-proxy no Supabase...";
+    try {
+      const info = await callVertexProxy(settings, { action: "ping" }, game.usage);
+      if (statusEl) {
+        statusEl.textContent = `✓ Ponte Vertex ativa! Projeto: ${info.projectId} · Região: ${info.location} · Limite: até ${info.cutoffDate}`;
+      }
+      btnEl.textContent = "✓ Ponte OK";
+      setTimeout(() => { btnEl.textContent = prev; }, 2200);
+    } catch (err) {
+      if (statusEl) statusEl.textContent = `✕ ${err.message}`;
+      btnEl.textContent = prev;
+    } finally {
+      btnEl.disabled = false;
+    }
+  });
+
   document.getElementById("btn-tts-breakdown")?.addEventListener("click", () => {
     document.getElementById("tts-breakdown-box")?.classList.toggle("hidden");
   });
@@ -1088,6 +1233,8 @@ function bindUI() {
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiPaidKey: document.getElementById("cfg-gemini-paid-key").value.trim(),
       ttsVoice: normalizeTtsFamily(document.getElementById("cfg-tts-voice")?.value || "gemini-tts"),
+      vertexProxyEnabled: document.getElementById("cfg-vertex-enabled")?.checked ?? false,
+      vertexImageModel: document.getElementById("cfg-vertex-img-model")?.value || "imagen-4.0-fast-generate-001",
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
       geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,

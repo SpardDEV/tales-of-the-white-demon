@@ -62,6 +62,8 @@ export const DEFAULT_SETTINGS = {
   supabaseAnonKey: PRELOADED_SUPABASE_ANON_KEY,
   slotId: "white-demon-01",
   supabaseStorageLimitMb: 500,
+  vertexProxyEnabled: false,
+  vertexImageModel: "imagen-4.0-fast-generate-001",
   artStylePrompt: DEFAULT_ART_STYLE
 };
 
@@ -77,6 +79,11 @@ export const MODEL_PRICES_USD = {
   "gemini-2.5-flash": { in: 0.3, out: 2.5 },
   "gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
   "gemini-2.5-flash-preview-tts": { in: 0.5, out: 10.0 },
+  "gemini-2.5-flash-tts": { in: 0.5, out: 10.0 },
+  "gemini-2.5-flash-image": { in: 0.3, out: 2.5 },
+  "imagen-4.0-fast-generate-001": { perImage: 0.02 },
+  "imagen-4.0-generate-001": { perImage: 0.04 },
+  "imagen-4.0-ultra-generate-001": { perImage: 0.06 },
   "gemini-2.0-flash": { in: 0.1, out: 0.4 },
   "gemma-4-31b-it": { in: 0, out: 0 }, // gratuito na API Gemini
   "gemma-4-26b-a4b-it": { in: 0, out: 0 }, // gratuito na API Gemini
@@ -100,7 +107,8 @@ export function sumModels(list) {
 export function estimateCostUsd(models = {}) {
   return Object.entries(models).reduce((sum, [model, m]) => {
     const p = MODEL_PRICES_USD[model] || MODEL_PRICES_USD["gemini-2.5-flash"];
-    return sum + (m.in * p.in + m.out * p.out) / 1e6;
+    if (p.perImage) return sum + (m.req || 0) * p.perImage;
+    return sum + ((m.in || 0) * (p.in || 0) + (m.out || 0) * (p.out || 0)) / 1e6;
   }, 0);
 }
 
