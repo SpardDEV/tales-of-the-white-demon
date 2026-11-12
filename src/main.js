@@ -107,7 +107,7 @@ async function confirmPaidForModel({ model, roleLabel, status }) {
   return true;
 }
 
-function callModelPreferFree({ model, roleLabel, systemPrompt, userMessage, contextPayload = null, temperature = 0.82 }) {
+function callModelPreferFree({ model, roleLabel, systemPrompt, userMessage, contextPayload = null, temperature = 0.82, fastMode = false, timeoutMs = 35000 }) {
   const pk = paidWithinBudgetKey();
   const alreadyPaid = isModelPaidUnlockedToday(model) && !!pk;
   return callGemini({
@@ -121,7 +121,9 @@ function callModelPreferFree({ model, roleLabel, systemPrompt, userMessage, cont
     userMessage,
     contextPayload,
     usage: game.usage,
-    temperature
+    temperature,
+    fastMode,
+    timeoutMs
   });
 }
 
@@ -497,7 +499,8 @@ async function handleChapterRotationIfNeeded() {
       model: settings.geminiModel,
       roleLabel: "Resumo de Capítulo",
       systemPrompt,
-      userMessage: userPrompt
+      userMessage: userPrompt,
+      fastMode: true
     });
     const closed = await rotateChapter(
       game,
@@ -531,11 +534,16 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
   try {
     const systemPrompt = buildSystemPrompt(game, cmd.mode, negotiationAction, focusTarget);
 
-    // Gemma 4 na frente (classifica + busca memória) em paralelo com busca vetorial pgvector
+    // Gemma 4 + RAG vetorial só rodam quando já há lore/capítulos longos para buscar (poupam latência no início/teste)
     const isActiveTurn = game.core.meta.phase === "active_game" && !negotiationAction;
     const manualLock = settings.epicManualOnly === true;
+    const compendiumCount =
+      (game.compendium?.npcs?.length || 0) +
+      (game.compendium?.bestiary?.length || 0) +
+      (game.compendium?.concepts?.length || 0);
+    const hasDeepLore = (game.chaptersIndex || []).some((c) => c.isClosed) || compendiumCount > 6;
     const routerPromise =
-      isActiveTurn && settings.geminiClassifierModel && cmd.text && rawInput !== "__START_PROLOGUE__"
+      isActiveTurn && hasDeepLore && settings.geminiClassifierModel && cmd.text && rawInput !== "__START_PROLOGUE__"
         ? (() => {
             const c = buildClassifierPrompt(game, cmd.text);
             return callModelPreferFree({
@@ -543,7 +551,9 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
               roleLabel: "Roteador Gemma 4",
               systemPrompt: c.systemPrompt,
               userMessage: c.userMessage,
-              temperature: 0
+              temperature: 0,
+              fastMode: true,
+              timeoutMs: 6000
             })
               .then((r) => r.parsed || {})
               .catch((err) => {
@@ -554,7 +564,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
         : Promise.resolve({});
 
     const vectorPromise =
-      isActiveTurn && rawInput !== "__START_PROLOGUE__"
+      isActiveTurn && !game.core.meta.isTest && hasDeepLore && rawInput !== "__START_PROLOGUE__"
         ? searchVectorMemory({
             settings,
             queryText: cmd.text,
@@ -596,7 +606,8 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       roleLabel,
       systemPrompt,
       userMessage: cmd.forceEpic ? cmd.text : rawInput,
-      contextPayload
+      contextPayload,
+      fastMode: !epic
     });
     transientMessages = [];
     game.core.meta.nextEpic = parsed.epico === true;

@@ -51,6 +51,14 @@ export function recordGeminiUsage(usage, usageMetadata, model = "?", isPaid = fa
   return { promptTokens, outputTokens, totalTokens: tokens };
 }
 
+function buildThinkingConfig(m, fastMode) {
+  if (!fastMode || !m || m.startsWith("gemma")) return null;
+  if (/^gemini-2\.5-(flash|lite)/i.test(m)) return { thinkingBudget: 0 };
+  if (/^gemini-3.*flash/i.test(m)) return { thinkingLevel: "minimal" };
+  if (/^gemini-3/i.test(m)) return { thinkingLevel: "low" };
+  return null;
+}
+
 // Sempre tenta a Chave Free primeiro neste modelo específico.
 // Se ESTE modelo bater cota/exigir billing (429/403), acusa aviso antes de mover SÓ este modelo para a Paga.
 export async function callGemini({
@@ -64,7 +72,9 @@ export async function callGemini({
   userMessage,
   contextPayload,
   usage,
-  temperature = 0.82
+  temperature = 0.82,
+  fastMode = false,
+  timeoutMs = 35000
 }) {
   if (!apiKey && !paidApiKey) {
     throw new Error("Configure sua Gemini API Key em ⚙️ Configurações antes de jogar.");
@@ -75,22 +85,27 @@ export async function callGemini({
     : userMessage;
 
   // Gemma na API não aceita systemInstruction nem modo JSON: o prompt vai junto no texto.
-  const buildBody = (m) => {
+  const buildBody = (m, allowThinking = true) => {
     const gemma = m.startsWith("gemma");
+    const thinkingCfg = allowThinking ? buildThinkingConfig(m, fastMode) : null;
     return {
       ...(gemma ? {} : { systemInstruction: { parts: [{ text: systemPrompt }] } }),
       contents: [{ role: "user", parts: [{ text: gemma ? `${systemPrompt}
 
 ${payloadText}` : payloadText }] }],
-      generationConfig: { ...(gemma ? {} : { responseMimeType: "application/json" }), temperature }
+      generationConfig: {
+        ...(gemma ? {} : { responseMimeType: "application/json" }),
+        ...(thinkingCfg ? { thinkingConfig: thinkingCfg } : {}),
+        temperature
+      }
     };
   };
 
-  const send = async (key) => {
-    const body = buildBody(model);
+  const sendRaw = async (key, allowThinking) => {
+    const body = buildBody(model, allowThinking);
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 35000) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     try {
       return await fetch(endpoint, {
         method: "POST",
@@ -100,12 +115,22 @@ ${payloadText}` : payloadText }] }],
       });
     } catch (err) {
       if (err?.name === "AbortError") {
-        throw new Error(`Tempo limite (35s) excedido ao chamar ${model}. Tente enviar novamente.`);
+        throw new Error(`Tempo limite (${Math.round(timeoutMs / 1000)}s) excedido ao chamar ${model}. Tente enviar novamente.`);
       }
       throw err;
     } finally {
       if (timer) clearTimeout(timer);
     }
+  };
+
+  const send = async (key) => {
+    const useThinking = Boolean(buildThinkingConfig(model, fastMode));
+    let res = await sendRaw(key, useThinking);
+    if (!res.ok && res.status === 400 && useThinking) {
+      // Caso alguma variante/preview rejeite thinkingConfig/minimal, repete sem ele sem perder a chamada.
+      res = await sendRaw(key, false);
+    }
+    return res;
   };
 
   let usedPaid = Boolean(isPaid && !apiKey);

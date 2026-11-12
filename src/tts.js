@@ -88,6 +88,55 @@ function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, voiceNa
   return { withinFreeTier: !usedPaid, actualUsd };
 }
 
+export function cleanTextForSpeech(text) {
+  return String(text || "")
+    .replace(/[❄◈❖⚔✦☰※▲►•]/g, " ")
+    .replace(/[*_`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function splitSpeechChunks(rawText, firstMax = 190, nextMax = 360) {
+  const clean = cleanTextForSpeech(rawText);
+  if (!clean) return [];
+  if (clean.length <= firstMax + 40) return [clean];
+
+  // Quebra primeiro por frases; se uma frase passar do limite, quebra em vírgulas/espaços
+  const rawParts = clean.split(/(?<=[.!?…])\s+|\n+/).filter(Boolean);
+  const pieces = [];
+  for (const part of rawParts) {
+    if (part.length <= nextMax) {
+      pieces.push(part);
+      continue;
+    }
+    let rest = part;
+    while (rest.length > nextMax) {
+      let cut = rest.lastIndexOf(",", nextMax);
+      if (cut < 80) cut = rest.lastIndexOf(" ", nextMax);
+      if (cut < 40) cut = nextMax;
+      pieces.push(rest.slice(0, cut + 1).trim());
+      rest = rest.slice(cut + 1).trim();
+    }
+    if (rest) pieces.push(rest);
+  }
+
+  const chunks = [];
+  let buf = "";
+  for (const p of pieces) {
+    const limit = chunks.length === 0 ? firstMax : nextMax;
+    if (!buf) {
+      buf = p;
+    } else if (buf.length + 1 + p.length <= limit) {
+      buf += ` ${p}`;
+    } else {
+      chunks.push(buf);
+      buf = p;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
 function pcmBase64ToWavUrl(base64, mimeType = "") {
   const bin = atob(base64);
   const pcm = new Uint8Array(bin.length);
@@ -119,16 +168,30 @@ function pcmBase64ToWavUrl(base64, mimeType = "") {
 }
 
 let activeAudio = null;
-let activeAudioUrl = null;
+let playbackSessionId = 0;
+const activeControllers = new Set();
+const ttsWavCache = new Map();
+const TTS_CACHE_MAX = 40;
+
+function rememberWavCache(key, entry) {
+  if (ttsWavCache.size >= TTS_CACHE_MAX) {
+    const oldestKey = ttsWavCache.keys().next().value;
+    const old = ttsWavCache.get(oldestKey);
+    if (old?.wavUrl) URL.revokeObjectURL(old.wavUrl);
+    ttsWavCache.delete(oldestKey);
+  }
+  ttsWavCache.set(key, entry);
+}
 
 export function stopTts() {
+  playbackSessionId += 1;
+  for (const ctrl of activeControllers) ctrl.abort();
+  activeControllers.clear();
   if (activeAudio) {
+    activeAudio.onended = null;
+    activeAudio.onerror = null;
     activeAudio.pause();
     activeAudio = null;
-  }
-  if (activeAudioUrl) {
-    URL.revokeObjectURL(activeAudioUrl);
-    activeAudioUrl = null;
   }
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
@@ -149,12 +212,13 @@ export async function speakMessage({
   voiceSpec = null
 }) {
   stopTts();
+  const sessionId = playbackSessionId;
   const family = normalizeTtsFamily(settings?.ttsVoice || "gemini-tts");
 
   if (family === "browser") {
     if (!("speechSynthesis" in window)) throw new Error("Este navegador não suporta síntese de voz local.");
     const spec = resolveVoiceSpec("browser", mode, voiceSpec);
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(cleanTextForSpeech(text) || text);
     u.lang = "pt-BR";
     u.pitch = spec.gender.startsWith("F") ? 1.15 : spec.gender === "M2" ? 0.85 : 1.0;
     u.rate = parseFloat(spec.rate) || 1.0;
@@ -169,83 +233,133 @@ export async function speakMessage({
   }
 
   const spec = resolveVoiceSpec(family, mode, voiceSpec);
-  const promptText = `Leia exatamente o texto abaixo em português do Brasil, com tom ${spec.tone} (sem adicionar nem remover palavras):\n\n${text}`;
-
-  const sendTts = async (key) => {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_TTS_MODEL)}:generateContent?key=${encodeURIComponent(key)}`;
-    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), 35000) : null;
-    try {
-      return await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: promptText }] }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: spec.voiceName }
-              }
-            }
-          }
-        }),
-        ...(ctrl ? { signal: ctrl.signal } : {})
-      });
-    } catch (err) {
-      if (err?.name === "AbortError") throw new Error("Tempo limite (35s) no Gemini TTS. Tente novamente.");
-      throw err;
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
+  const chunks = splitSpeechChunks(text);
+  if (!chunks.length) throw new Error("Nada para narrar.");
 
   let usedPaid = Boolean(isPaid && !freeKey);
-  const initialKey = usedPaid ? paidKey : (freeKey || paidKey);
-  usedPaid = initialKey === paidKey && initialKey !== freeKey;
-  let res = await sendTts(initialKey);
+  let activeKey = usedPaid ? paidKey : (freeKey || paidKey);
+  usedPaid = activeKey === paidKey && activeKey !== freeKey;
 
-  if (!res.ok && !usedPaid && paidKey && paidKey !== initialKey && [400, 403, 404, 429].includes(res.status)) {
-    const allowed = typeof onConfirmPaid === "function"
-      ? await onConfirmPaid({ model: GEMINI_TTS_MODEL, roleLabel: "TTS Gemini", status: res.status })
-      : false;
-    if (!allowed) {
-      throw new Error(`Cota gratuita de TTS Gemini atingida (${res.status}); Chave Paga não autorizada.`);
+  const sendTtsChunk = async (chunkText, allowConfirm) => {
+    const cacheKey = `${GEMINI_TTS_MODEL}|${spec.voiceName}|${spec.tone}|${chunkText}`;
+    if (ttsWavCache.has(cacheKey)) {
+      const cached = ttsWavCache.get(cacheKey);
+      return { ...cached, fromCache: true };
     }
-    usedPaid = true;
-    res = await sendTts(paidKey);
+
+    const promptText = `Leia em pt-BR, tom ${spec.tone}, sem adicionar palavras:\n${chunkText}`;
+    const callWithKey = async (key) => {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_TTS_MODEL)}:generateContent?key=${encodeURIComponent(key)}`;
+      const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (ctrl) activeControllers.add(ctrl);
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 35000) : null;
+      try {
+        return await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: promptText }] }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: spec.voiceName }
+                }
+              }
+            }
+          }),
+          ...(ctrl ? { signal: ctrl.signal } : {})
+        });
+      } catch (err) {
+        if (err?.name === "AbortError") throw new Error("Tempo limite (35s) no Gemini TTS. Tente novamente.");
+        throw err;
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (ctrl) activeControllers.delete(ctrl);
+      }
+    };
+
+    let res = await callWithKey(activeKey);
+    if (!res.ok && allowConfirm && !usedPaid && paidKey && paidKey !== activeKey && [400, 403, 404, 429].includes(res.status)) {
+      const allowed = typeof onConfirmPaid === "function"
+        ? await onConfirmPaid({ model: GEMINI_TTS_MODEL, roleLabel: "TTS Gemini", status: res.status })
+        : false;
+      if (!allowed) {
+        throw new Error(`Cota gratuita de TTS Gemini atingida (${res.status}); Chave Paga não autorizada.`);
+      }
+      usedPaid = true;
+      activeKey = paidKey;
+      res = await callWithKey(paidKey);
+    }
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Erro Gemini TTS (${res.status}): ${errText.slice(0, 220)}`);
+    }
+
+    const data = await res.json();
+    const inline = data?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+    if (!inline?.data) throw new Error("Gemini TTS não retornou áudio.");
+
+    const tok = recordGeminiUsage(usage, data.usageMetadata, GEMINI_TTS_MODEL, usedPaid);
+    const realUsd = tok.totalTokens
+      ? (tok.promptTokens * 0.5 + tok.outputTokens * 10.0) / 1e6
+      : estimateTtsCost(chunkText, family, mode, false, voiceSpec).usd;
+    const wavUrl = pcmBase64ToWavUrl(inline.data, inline.mimeType);
+    const result = { wavUrl, usd: realUsd, brlCents: realUsd * USD_TO_BRL_REF * 100, fromCache: false };
+    rememberWavCache(cacheKey, result);
+    return result;
+  };
+
+  // Gera e toca o 1º trecho imediatamente (baixa latência); demais trechos são pré-buscados em fila durante a reprodução.
+  const first = await sendTtsChunk(chunks[0], true);
+  if (sessionId !== playbackSessionId) {
+    return { chars: String(text || "").length, usd: 0, brlCents: 0, voiceName: spec.voiceName, withinFreeTier: !usedPaid, cancelled: true };
   }
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Erro Gemini TTS (${res.status}): ${errText.slice(0, 220)}`);
-  }
-
-  const data = await res.json();
-  const inline = data?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
-  if (!inline?.data) {
-    throw new Error("Gemini TTS não retornou áudio.");
-  }
-
-  const tok = recordGeminiUsage(usage, data.usageMetadata, GEMINI_TTS_MODEL, usedPaid);
   const chars = String(text || "").length;
-  const realUsd = tok.totalTokens
-    ? (tok.promptTokens * 0.5 + tok.outputTokens * 10.0) / 1e6
-    : estimateTtsCost(text, family, mode, false, voiceSpec).usd;
-  const brlCents = realUsd * USD_TO_BRL_REF * 100;
-
+  const firstUsd = first.fromCache ? 0 : first.usd;
+  const firstBrl = firstUsd * USD_TO_BRL_REF * 100;
   const rec = recordTtsUsage(usage, {
     turnIndex,
     label,
     chars,
-    usd: realUsd,
-    brlCents,
+    usd: firstUsd,
+    brlCents: firstBrl,
     voiceName: `${spec.voiceName} (${spec.gender})`,
     usedPaid
   });
 
-  activeAudioUrl = pcmBase64ToWavUrl(inline.data, inline.mimeType);
-  activeAudio = new Audio(activeAudioUrl);
+  // Reaproveita o mesmo elemento <audio> para manter permissão de autoplay contínua no mobile
+  activeAudio = new Audio(first.wavUrl);
+
+  if (chunks.length > 1) {
+    let nextPromise = sendTtsChunk(chunks[1], false).catch(() => null);
+    let idx = 1;
+    const historyItem = usage.ttsHistory?.[usage.ttsHistory.length - 1] || null;
+
+    activeAudio.onended = async () => {
+      if (sessionId !== playbackSessionId || !activeAudio) return;
+      const next = await nextPromise;
+      if (sessionId !== playbackSessionId || !activeAudio || !next?.wavUrl) return;
+      if (!next.fromCache) {
+        const extraUsd = next.usd || 0;
+        const extraBrl = extraUsd * USD_TO_BRL_REF * 100;
+        usage.ttsMonthUsd = (usage.ttsMonthUsd || 0) + extraUsd;
+        if (usedPaid) usage.ttsMonthBillableUsd = (usage.ttsMonthBillableUsd || 0) + extraUsd;
+        if (historyItem) {
+          historyItem.usd = (historyItem.usd || 0) + extraUsd;
+          historyItem.brlCents = (historyItem.brlCents || 0) + extraBrl;
+          if (usedPaid) historyItem.actualUsd = (historyItem.actualUsd || 0) + extraUsd;
+        }
+      }
+      idx += 1;
+      nextPromise = idx < chunks.length ? sendTtsChunk(chunks[idx], false).catch(() => null) : Promise.resolve(null);
+      activeAudio.src = next.wavUrl;
+      activeAudio.play().catch(() => {});
+    };
+  }
+
   await activeAudio.play();
-  return { chars, usd: realUsd, brlCents, voiceName: spec.voiceName, ...rec };
+  return { chars, usd: firstUsd, brlCents: firstBrl, voiceName: spec.voiceName, ...rec };
 }

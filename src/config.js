@@ -8,7 +8,7 @@ export const DEFAULT_ART_STYLE =
   "Dark fantasy stylized comic-ink illustration, bold expressive black ink lineart, dramatic crosshatching and cel-shaded shadows, high-contrast rim lighting against a pitch-black background, vivid glowing mana accents, vertical 9:16 mobile portrait";
 
 export const PROTAGONIST_APPEARANCE_BASE =
-  "Lean athletic dark-fantasy warrior reminiscent of Grimmjow Jaegerjaquez: wild spiky ice-blue hair, sharp fierce cyan eyes with subtle teal markings under the eyes, jagged pale frost-bone crest along the right jawline, confident predator smirk, tattered white-and-black high-collar haori coat, swirling pale-cyan cryogenic mana shards";
+  "Lean athletic dark-fantasy warrior with spiky ice-blue hair, sharp cyan eyes with subtle teal markings under the eyes, clean human jawline, focused expression, tattered white-and-black high-collar haori coat, subtle pale-cyan cryogenic mana aura";
 
 // Marcos orgânicos de referência (não são travas rígidas: servem de guia lógico para o Árbitro de IA)
 export const PROGRESSION_MILESTONES = [
