@@ -873,6 +873,19 @@ export function createTestGameData() {
     }
   ];
   game.chaptersIndex[0].title = "Teste: A Masmorra Rachada";
+  game.chaptersIndex[0].turnCount = 1;
+  game.core.meta.totalTurns = 1;
   game.activeChapter.title = "Teste: A Masmorra Rachada";
+  game.activeChapter.turns = [
+    {
+      turn: 1,
+      mode: "narrative",
+      user: "",
+      voice: { gender: "F", pitch: "-1st", rate: "0.97" },
+      narrative:
+        "Você desperta com a têmpora latejando sobre lajes úmidas da Masmorra Rachada. Uma bruma fria escorre pelas frestas do teto cobertas por marcas fundas de garras, enquanto uma camada fina de geada estala sob os dedos da sua mão direita.\n\nA poucos passos, encostada num pilar quebrado, Kaelen aponta uma besta pesada para o seu peito. Os olhos cinzentos dela medem sua respiração antes de murmurar:\n— Se vai congelar alguma coisa, garoto, aponte para o corredor escuro atrás de você. Tem algo arrastando garras lá dentro."
+    }
+  ];
+  game.activeChapter.turnCount = 1;
   return game;
 }

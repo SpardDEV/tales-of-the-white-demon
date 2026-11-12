@@ -1,7 +1,7 @@
 import { canUndo, getChapterLocal, todayKey } from "./state.js";
 import { estimateCostUsd, TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
 import { fetchChapterOnDemand } from "./supabase.js";
-import { estimateTtsCost, formatTtsCost, getTtsMonthlyByTier } from "./tts.js";
+import { estimateTtsCost, formatTtsCost, normalizeTtsFamily } from "./tts.js";
 
 function esc(str) {
   return String(str ?? "")
@@ -111,16 +111,14 @@ function costReport(usage, settings) {
   const ttsUsd = usage.ttsMonthKey === month ? usage.ttsMonthUsd || 0 : 0;
   const ttsBillableUsd = usage.ttsMonthKey === month ? usage.ttsMonthBillableUsd || 0 : 0;
   const ttsCents = ttsUsd * USD_TO_BRL_REF * 100;
-  const byTier = getTtsMonthlyByTier(usage);
-  const neural2Left = Math.max(0, 1000000 - byTier.neural2).toLocaleString("pt-BR");
-  const wavenetLeft = Math.max(0, 4000000 - byTier.wavenet).toLocaleString("pt-BR");
+  const ttsFam = normalizeTtsFamily(settings.ttsVoice || "gemini-tts");
+  const ttsModeTxt = ttsFam === "browser" ? "Navegador R$ 0" : "Gemini TTS (Free→Paga)";
   return (
     `Heimdall — proteção por modelo (R$ 30 ≈ US$ 5):\n` +
     `Chave Paga no mês ${month}: US$ ${paidSpent.toFixed(3)} / US$ ${budget} (${pct}%)\n` +
     `Economizado na Chave Free (US$ 0 reais): ~US$ ${freeRef.toFixed(3)}\n` +
     paidUnlockNote +
-    `TTS Voz (${settings.ttsVoice || "pt-BR-Neural2-B"}): Neural2 ${neural2Left} / 1M grátis · WaveNet ${wavenetLeft} / 4M grátis\n` +
-    `TTS Mês (${ttsChars.toLocaleString("pt-BR")} chars): ref. ~${ttsCents.toFixed(2)}¢ · cobrável pós-franquia US$ ${ttsBillableUsd.toFixed(4)}\n` +
+    `TTS (${ttsModeTxt} · ${ttsChars.toLocaleString("pt-BR")} chars/mês): ref. ~${ttsCents.toFixed(2)}¢ · cobrado US$ ${ttsBillableUsd.toFixed(4)}\n` +
     `Hoje (todas as chamadas):\n${lines(usage.models || {})}\n` +
     `${keysInfo}\n` +
     `Cascata: comum ${settings.geminiModel} → épico ${settings.geminiEpicModel || "desligado"} · classificador ${settings.geminiClassifierModel || "desligado"}`
@@ -133,7 +131,6 @@ export function renderTtsBreakdown(usage) {
   const totalUsd = usage.ttsMonthKey === month ? usage.ttsMonthUsd || 0 : 0;
   const billableUsd = usage.ttsMonthKey === month ? usage.ttsMonthBillableUsd || 0 : 0;
   const totalCents = totalUsd * USD_TO_BRL_REF * 100;
-  const byTier = getTtsMonthlyByTier(usage);
   const btn = document.getElementById("btn-tts-breakdown");
   if (btn) {
     btn.textContent = `🔊 Gasto TTS por Mensagem (Real: US$ ${billableUsd.toFixed(4)} | Ref.: ~${totalCents.toFixed(2)}¢)`;
@@ -144,17 +141,14 @@ export function renderTtsBreakdown(usage) {
     box.textContent = "Nenhuma fala TTS gerada neste mês ainda. Clique em '🔊 Ouvir' em qualquer mensagem do chat.";
     return;
   }
-  const header = `Neural2: ${byTier.neural2.toLocaleString("pt-BR")}/1.000.000 | WaveNet: ${byTier.wavenet.toLocaleString("pt-BR")}/4.000.000\n`;
-  box.textContent =
-    header +
-    hist
-      .slice()
-      .reverse()
-      .map((h) => {
-        const tag = h.withinFreeTier === false ? "pós-franquia" : "na franquia";
-        return `• Turno ${h.turn ?? "?"} (${h.label}): ${formatTtsCost(h.usd, h.brlCents, h.chars)} [${h.tier} · ${tag}]`;
-      })
-      .join("\n");
+  box.textContent = hist
+    .slice()
+    .reverse()
+    .map((h) => {
+      const tag = h.withinFreeTier === false ? "Chave Paga" : "Cota Free";
+      return `• Turno ${h.turn ?? "?"} (${h.label}): ${formatTtsCost(h.usd, h.brlCents, h.chars)} [${h.tier} · ${tag}]`;
+    })
+    .join("\n");
 }
 
 export function renderHeaderAndQuotas(game, settings) {

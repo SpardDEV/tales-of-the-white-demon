@@ -35,21 +35,21 @@ export const PRELOADED_SUPABASE_ANON_KEY = "sb_publishable_nr_xmS7O95cUleEDfsXsb
 export const USD_TO_BRL_REF = 6.0; // referência aproximada (US$ 5 ≈ R$ 30)
 
 export const TTS_TIERS = {
-  neural2: { label: "Neural2 Auto (IA alterna M/F + pitch · 1M grátis/mês · $16/1M)", freeMonthlyChars: 1000000, usdPerChar: 0.000016, family: "neural2" },
-  wavenet: { label: "WaveNet Auto (IA alterna M/F + pitch · 4M grátis/mês · $4/1M)", freeMonthlyChars: 4000000, usdPerChar: 0.000004, family: "wavenet" },
+  "gemini-tts": { label: "Gemini TTS Auto (Chave Free → Paga · M/F + tom)", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" },
   browser: { label: "Voz do Navegador (R$ 0 · offline)", freeMonthlyChars: Infinity, usdPerChar: 0, family: "browser" },
   // Aliases de compatibilidade para saves antigos
-  "pt-BR-Neural2-B": { label: "Neural2 Auto", freeMonthlyChars: 1000000, usdPerChar: 0.000016, family: "neural2" },
-  "pt-BR-Neural2-A": { label: "Neural2 Auto", freeMonthlyChars: 1000000, usdPerChar: 0.000016, family: "neural2" },
-  "pt-BR-Neural2-C": { label: "Neural2 Auto", freeMonthlyChars: 1000000, usdPerChar: 0.000016, family: "neural2" },
-  "pt-BR-Wavenet-B": { label: "WaveNet Auto", freeMonthlyChars: 4000000, usdPerChar: 0.000004, family: "wavenet" }
+  neural2: { label: "Gemini TTS Auto", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" },
+  wavenet: { label: "Gemini TTS Auto", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" },
+  "pt-BR-Neural2-B": { label: "Gemini TTS Auto", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" },
+  "pt-BR-Neural2-A": { label: "Gemini TTS Auto", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" },
+  "pt-BR-Wavenet-B": { label: "Gemini TTS Auto", freeMonthlyChars: Infinity, usdPerChar: 0.000022, family: "gemini-tts" }
 };
 
 export const DEFAULT_SETTINGS = {
   geminiKey: "", // API Free: sempre tentada primeiro em cada modelo
   geminiPaidKey: "", // API Paga (créditos): só usada por modelo após aviso/confirmação
-  ttsKey: "", // Google Cloud TTS Key (se vazia, tenta geminiPaidKey)
-  ttsVoice: "neural2",
+  ttsKey: "",
+  ttsVoice: "gemini-tts",
   geminiModel: "gemini-3.5-flash-lite",
   geminiEpicModel: "gemini-3.8-flash", // "" = sem cascata
   geminiClassifierModel: "gemma-4-31b-it", // "" = só a marca "epico" do turno anterior decide
@@ -76,6 +76,7 @@ export const MODEL_PRICES_USD = {
   "gemini-2.5-pro": { in: 1.25, out: 10.0 },
   "gemini-2.5-flash": { in: 0.3, out: 2.5 },
   "gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
+  "gemini-2.5-flash-preview-tts": { in: 0.5, out: 10.0 },
   "gemini-2.0-flash": { in: 0.1, out: 0.4 },
   "gemma-4-31b-it": { in: 0, out: 0 }, // gratuito na API Gemini
   "gemma-4-26b-a4b-it": { in: 0, out: 0 }, // gratuito na API Gemini

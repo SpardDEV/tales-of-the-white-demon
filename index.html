@@ -258,19 +258,12 @@
           <span>🛡 Trava manual: só usar Narrador Épico com <code>/epic</code> (desmarcado = Gemma 4 decide na frente)</span>
         </label>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="cfg-tts-voice">🔊 Qualidade TTS (IA alterna voz M/F + pitch)</label>
-            <select id="cfg-tts-voice">
-              <option value="neural2">Neural2 Automática (IA alterna M/F · 1M/mês grátis)</option>
-              <option value="wavenet">WaveNet Automática (IA alterna M/F · 4M/mês grátis)</option>
-              <option value="browser">Navegador Local (R$ 0 · offline)</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="cfg-tts-key">Google Cloud TTS Key (opcional · ou usa Paga)</label>
-            <input id="cfg-tts-key" type="password" placeholder="AIza... (se vazia, usa Chave Paga)" />
-          </div>
+        <div class="form-group">
+          <label for="cfg-tts-voice">🔊 Voz TTS (usa sua Gemini Key Free → Paga · IA alterna M/F + tom)</label>
+          <select id="cfg-tts-voice">
+            <option value="gemini-tts">Gemini TTS Automático (Charon/Fenrir M · Kore/Aoede F)</option>
+            <option value="browser">Navegador Local (R$ 0 · offline)</option>
+          </select>
         </div>
 
         <hr class="sep" />

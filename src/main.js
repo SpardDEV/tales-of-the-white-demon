@@ -32,7 +32,7 @@ import {
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
-import { normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
+import { GEMINI_TTS_MODEL, normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
 import {
   indexMemoryInBackground,
   reindexAllMemoryVectors,
@@ -62,7 +62,9 @@ let isSending = false;
 let transientMessages = [];
 
 function freeGeminiKey() {
-  return (settings.geminiKey || settings.geminiPaidKey || "").trim();
+  const domFree = typeof document !== "undefined" ? document.getElementById("cfg-gemini-key")?.value?.trim() || "" : "";
+  const domPaid = typeof document !== "undefined" ? document.getElementById("cfg-gemini-paid-key")?.value?.trim() || "" : "";
+  return (settings.geminiKey || domFree || settings.geminiPaidKey || domPaid || "").trim();
 }
 
 function paidBudgetAllowed() {
@@ -184,7 +186,7 @@ async function attachMediaToId(mediaId, file) {
 }
 
 const uiHandlers = {
-  getTtsVoice: () => normalizeTtsFamily(settings.ttsVoice || "neural2"),
+  getTtsVoice: () => normalizeTtsFamily(settings.ttsVoice || "gemini-tts"),
   onSpeakTurn: async (turnIdx, btnEl) => {
     const turn = game.activeChapter.turns[turnIdx];
     if (!turn?.narrative) return;
@@ -198,20 +200,20 @@ const uiHandlers = {
       btnEl.textContent = "🔊 ...";
     }
     try {
+      const pk = paidWithinBudgetKey();
+      const alreadyPaid = isModelPaidUnlockedToday(GEMINI_TTS_MODEL) && !!pk;
       const res = await speakMessage({
         text: turn.narrative,
         mode: turn.mode || "narrative",
         settings,
         usage: game.usage,
+        apiKey: alreadyPaid ? pk : freeGeminiKey(),
+        paidApiKey: alreadyPaid ? "" : pk,
+        isPaid: alreadyPaid,
+        onConfirmPaid: confirmPaidForModel,
         turnIndex: turn.turn || turnIdx + 1,
         label: turn.mode || "narrative",
-        voiceSpec: turn.voice || null,
-        onSwitchVoice: async (nextVoice) => {
-          settings.ttsVoice = nextVoice;
-          saveSettings(settings);
-          fillSettingsModalFields();
-          pushUserSettingsToSupabase(settings).catch(() => {});
-        }
+        voiceSpec: turn.voice || null
       });
       if (!res.freeBrowser) {
         turn.ttsPaid = {
@@ -518,10 +520,11 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
   if (!cmd.text && !negotiationAction) return false;
 
   isSending = true;
-  transientMessages = [];
+  transientMessages = [{ mode: "system", text: "⏳ Consultando IA..." }];
   const btn = document.getElementById("btn-send");
   btn.disabled = true;
   btn.textContent = "...";
+  renderChatLog(game, transientMessages, uiHandlers);
 
   pushUndoSnapshot(game);
 
@@ -595,6 +598,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       userMessage: cmd.forceEpic ? cmd.text : rawInput,
       contextPayload
     });
+    transientMessages = [];
     game.core.meta.nextEpic = parsed.epico === true;
     if (epic) {
       transientMessages.push({
@@ -693,7 +697,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
     return true;
   } catch (err) {
     popUndoSnapshot(game);
-    transientMessages.push({ mode: "error", text: err.message });
+    transientMessages = [{ mode: "error", text: err.message }];
     renderChatLog(game, transientMessages, uiHandlers);
     renderHeaderAndQuotas(game, settings);
     return false;
@@ -758,9 +762,7 @@ function fillSettingsModalFields() {
   document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 5;
   const epManual = document.getElementById("cfg-epic-manual");
   if (epManual) epManual.checked = settings.epicManualOnly === true;
-  setSelectValue("cfg-tts-voice", normalizeTtsFamily(settings.ttsVoice || "neural2"));
-  const ttsKeyEl = document.getElementById("cfg-tts-key");
-  if (ttsKeyEl) ttsKeyEl.value = settings.ttsKey || "";
+  setSelectValue("cfg-tts-voice", normalizeTtsFamily(settings.ttsVoice || "gemini-tts"));
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
   document.getElementById("cfg-gemini-tpd").value = settings.geminiTpdLimit || 1000000;
   document.getElementById("cfg-sb-url").value = settings.supabaseUrl || "";
@@ -1026,8 +1028,7 @@ function bindUI() {
       ...settings,
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiPaidKey: document.getElementById("cfg-gemini-paid-key").value.trim(),
-      ttsVoice: normalizeTtsFamily(document.getElementById("cfg-tts-voice")?.value || "neural2"),
-      ttsKey: document.getElementById("cfg-tts-key")?.value.trim() || "",
+      ttsVoice: normalizeTtsFamily(document.getElementById("cfg-tts-voice")?.value || "gemini-tts"),
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
       geminiClassifierModel: document.getElementById("cfg-gemini-classifier").value,
@@ -1153,9 +1154,10 @@ function bindUI() {
     viewingSphereId = game.core.meta.activeSphereId;
     transientMessages = [];
     await persistGameDataLocal(game);
-    refreshAllViews();
     document.getElementById("settings-modal").classList.add("hidden");
-    if (freeGeminiKey()) await sendTurn("Acordo zonzo no chão frio da masmorra. O que vejo ao meu redor?");
+    switchTab("chat");
+    refreshAllViews();
+    document.getElementById("chat-input")?.focus();
   });
   document.getElementById("btn-new-game").addEventListener("click", async () => {
     syncSettingsFromModal({ pushCloud: true });
@@ -1167,8 +1169,9 @@ function bindUI() {
     viewingSphereId = game.core.meta.activeSphereId;
     transientMessages = [];
     await persistGameDataLocal(game);
-    refreshAllViews();
     document.getElementById("settings-modal").classList.add("hidden");
+    switchTab("chat");
+    refreshAllViews();
     if (freeGeminiKey()) {
       await sendTurn("__START_PROLOGUE__");
     }

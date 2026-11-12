@@ -89,11 +89,23 @@ ${payloadText}` : payloadText }] }],
   const send = async (key) => {
     const body = buildBody(model);
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-    return fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 35000) : null;
+    try {
+      return await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        ...(ctrl ? { signal: ctrl.signal } : {})
+      });
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        throw new Error(`Tempo limite (35s) excedido ao chamar ${model}. Tente enviar novamente.`);
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   };
 
   let usedPaid = Boolean(isPaid && !apiKey);

@@ -194,23 +194,32 @@ export async function embedText(text, apiKey, taskType = "RETRIEVAL_DOCUMENT") {
   const key = (apiKey || "").trim();
   const clean = String(text || "").trim();
   if (!key || !clean) return null;
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${encodeURIComponent(key)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "models/gemini-embedding-001",
-        content: { parts: [{ text: clean.slice(0, 4000) }] },
-        taskType,
-        outputDimensionality: 768
-      })
-    }
-  );
-  if (!res.ok) return null;
-  const data = await res.json().catch(() => null);
-  const values = data?.embedding?.values;
-  return Array.isArray(values) && values.length === 768 ? values : null;
+  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), 6000) : null;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${encodeURIComponent(key)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "models/gemini-embedding-001",
+          content: { parts: [{ text: clean.slice(0, 4000) }] },
+          taskType,
+          outputDimensionality: 768
+        }),
+        ...(ctrl ? { signal: ctrl.signal } : {})
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const values = data?.embedding?.values;
+    return Array.isArray(values) && values.length === 768 ? values : null;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function isMissingVectorInfraError(err) {

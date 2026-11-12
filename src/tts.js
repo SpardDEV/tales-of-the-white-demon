@@ -1,86 +1,56 @@
-// Motor de TTS sob demanda (Google Cloud TTS com SSML pitch + Fallback Web Speech grátis).
-// Mede exatamente quantos caracteres (incluindo SSML) e centavos cada mensagem consome.
+// Motor de TTS nativo via Gemini API (gemini-2.5-flash-preview-tts · Free primeiro → Paga com aviso) + Fallback Web Speech grátis.
+// Converte PCM 16-bit 24kHz da Gemini API em WAV reproduzível e mede tokens/centavos reais por mensagem.
 import { TTS_TIERS, USD_TO_BRL_REF } from "./config.js";
 import { todayKey } from "./state.js";
+import { recordGeminiUsage } from "./gemini.js";
+
+export const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 const MODE_VOICE = {
-  pray: { gender: "F", pitch: "+2st", rate: "0.95", label: "Deusa" },
-  prologue_deity: { gender: "F", pitch: "+2st", rate: "0.95", label: "Deusa" },
-  mana: { gender: "F2", pitch: "+3st", rate: "1.04", label: "Mana" },
-  system: { gender: "F", pitch: "-1st", rate: "1.08", label: "Sistema" },
-  world: { gender: "M2", pitch: "-2st", rate: "0.93", label: "Voz do Mundo" },
-  prologue_world: { gender: "M2", pitch: "-2st", rate: "0.93", label: "Voz do Mundo" },
-  narrative: { gender: "M", pitch: "-1st", rate: "0.98", label: "Crônica" }
+  pray: { gender: "F", pitch: "+2st", rate: "0.95", tone: "solene, acolhedor e místico" },
+  prologue_deity: { gender: "F", pitch: "+2st", rate: "0.95", tone: "solene, acolhedor e místico" },
+  mana: { gender: "F2", pitch: "+3st", rate: "1.04", tone: "leve, vibrante e etéreo" },
+  system: { gender: "F", pitch: "-1st", rate: "1.08", tone: "preciso, objetivo e firme" },
+  world: { gender: "M2", pitch: "-2st", rate: "0.93", tone: "profundo, antigo e grave" },
+  prologue_world: { gender: "M2", pitch: "-2st", rate: "0.93", tone: "profundo, antigo e grave" },
+  narrative: { gender: "M", pitch: "-1st", rate: "0.98", tone: "imersivo de dark fantasy" }
 };
 
-const VOICE_ROSTER = {
-  neural2: { M: "pt-BR-Neural2-B", M2: "pt-BR-Neural2-B", F: "pt-BR-Neural2-A", F2: "pt-BR-Neural2-C" },
-  wavenet: { M: "pt-BR-Wavenet-B", M2: "pt-BR-Wavenet-E", F: "pt-BR-Wavenet-C", F2: "pt-BR-Wavenet-D" }
+const GEMINI_VOICES = {
+  M: "Charon",
+  M2: "Fenrir",
+  F: "Kore",
+  F2: "Aoede"
 };
 
 export function normalizeTtsFamily(tierKey) {
-  const raw = String(tierKey || "neural2");
-  if (raw === "browser") return "browser";
-  if (raw === "wavenet" || raw.startsWith("pt-BR-Wavenet")) return "wavenet";
-  return "neural2";
+  return String(tierKey || "gemini-tts") === "browser" ? "browser" : "gemini-tts";
 }
 
-function sanitizePitch(p, fallback) {
-  if (typeof p === "string" && /^[+-]?\d+(\.\d+)?st$/i.test(p.trim())) {
-    const n = parseFloat(p);
-    return `${Math.max(-6, Math.min(6, n)) >= 0 && !String(n).startsWith("-") ? "+" : ""}${Math.max(-6, Math.min(6, n))}st`;
-  }
-  return fallback;
-}
-
-function sanitizeRate(r, fallback) {
-  const n = parseFloat(r);
-  if (Number.isFinite(n)) return String(Math.max(0.75, Math.min(1.35, n)));
-  return fallback;
-}
-
-export function resolveVoiceSpec(tierKey = "neural2", mode = "narrative", aiVoice = null) {
+export function resolveVoiceSpec(tierKey = "gemini-tts", mode = "narrative", aiVoice = null) {
   const family = normalizeTtsFamily(tierKey);
   const def = MODE_VOICE[mode] || MODE_VOICE.narrative;
   const gRaw = String(aiVoice?.gender || "").toUpperCase();
   const gender = ["M", "M2", "F", "F2"].includes(gRaw) ? gRaw : def.gender;
-  const pitch = sanitizePitch(aiVoice?.pitch, def.pitch);
-  const rate = sanitizeRate(aiVoice?.rate, def.rate);
-  const voiceName = family === "browser" ? "browser" : (VOICE_ROSTER[family]?.[gender] || VOICE_ROSTER.neural2.M);
-  return { family, gender, pitch, rate, voiceName };
+  const voiceName = family === "browser" ? "browser" : (GEMINI_VOICES[gender] || GEMINI_VOICES.M);
+  const toneBits = [def.tone];
+  if (aiVoice?.pitch) toneBits.push(`altura ${aiVoice.pitch}`);
+  if (aiVoice?.rate) toneBits.push(`ritmo ${aiVoice.rate}`);
+  return { family, gender, voiceName, tone: toneBits.join(", "), pitch: def.pitch, rate: def.rate };
 }
 
-function escXml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-export function buildSsml(text, mode = "narrative", aiVoice = null) {
-  const { pitch, rate } = resolveVoiceSpec("neural2", mode, aiVoice);
-  return `<speak><prosody pitch="${pitch}" rate="${rate}">${escXml(text)}</prosody></speak>`;
-}
-
-export function estimateTtsCost(text, tierKey = "neural2", mode = "narrative", useSsml = true, aiVoice = null) {
+export function estimateTtsCost(text, tierKey = "gemini-tts", mode = "narrative", _useSsml = true, aiVoice = null) {
   const family = normalizeTtsFamily(tierKey);
-  const tier = TTS_TIERS[family] || TTS_TIERS.neural2;
+  const tier = TTS_TIERS[family] || TTS_TIERS["gemini-tts"];
   const spec = resolveVoiceSpec(family, mode, aiVoice);
-  const ssml = useSsml ? buildSsml(text, mode, aiVoice) : String(text || "");
-  const chars = ssml.length;
-  const usd = chars * tier.usdPerChar;
+  const chars = String(text || "").length;
+  const usd = chars * (tier.usdPerChar || 0);
   const brlCents = usd * USD_TO_BRL_REF * 100;
-  return { chars, usd, brlCents, ssml, tier, voiceName: spec.voiceName, gender: spec.gender };
+  return { chars, usd, brlCents, tier, voiceName: spec.voiceName, gender: spec.gender };
 }
 
 export function formatTtsCost(usd, brlCents, chars) {
   return `${chars} chars · US$ ${usd.toFixed(5)} (~${brlCents.toFixed(2)} centavos)`;
-}
-
-function getTierFamily(tierKey) {
-  const fam = normalizeTtsFamily(tierKey);
-  return fam === "browser" ? null : fam;
 }
 
 function ensureTtsMonth(usage) {
@@ -90,38 +60,14 @@ function ensureTtsMonth(usage) {
     usage.ttsMonthChars = 0;
     usage.ttsMonthUsd = 0;
     usage.ttsMonthBillableUsd = 0;
-    usage.ttsMonthByTier = { neural2: 0, wavenet: 0 };
-    usage.ttsNeural2Prompted = false;
-    usage.ttsWavenetPrompted = false;
     usage.ttsHistory = [];
-  }
-  if (!usage.ttsMonthByTier) {
-    usage.ttsMonthByTier = { neural2: 0, wavenet: 0 };
   }
   return month;
 }
 
-export function getTtsMonthlyByTier(usage) {
-  const month = todayKey().slice(0, 7);
-  if (!usage || usage.ttsMonthKey !== month) return { neural2: 0, wavenet: 0 };
-  return {
-    neural2: usage.ttsMonthByTier?.neural2 || 0,
-    wavenet: usage.ttsMonthByTier?.wavenet || 0
-  };
-}
-
-function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, tierKey }) {
+function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, voiceName, usedPaid }) {
   ensureTtsMonth(usage);
-  const fam = getTierFamily(tierKey);
-  const tier = TTS_TIERS[tierKey] || TTS_TIERS["pt-BR-Neural2-B"];
-  const prevChars = fam ? (usage.ttsMonthByTier[fam] || 0) : 0;
-  const nextChars = prevChars + chars;
-  const freeCap = Number.isFinite(tier.freeMonthlyChars) ? tier.freeMonthlyChars : 0;
-  const billableChars = Math.max(0, nextChars - freeCap) - Math.max(0, prevChars - freeCap);
-  const actualUsd = billableChars * (tier.usdPerChar || 0);
-  const withinFreeTier = billableChars === 0;
-
-  if (fam) usage.ttsMonthByTier[fam] = nextChars;
+  const actualUsd = usedPaid ? usd : 0;
   usage.ttsMonthChars = (usage.ttsMonthChars || 0) + chars;
   usage.ttsMonthUsd = (usage.ttsMonthUsd || 0) + usd;
   usage.ttsMonthBillableUsd = (usage.ttsMonthBillableUsd || 0) + actualUsd;
@@ -134,22 +80,57 @@ function recordTtsUsage(usage, { turnIndex, label, chars, usd, brlCents, tierKey
       usd,
       brlCents,
       actualUsd,
-      withinFreeTier,
-      tier: tierKey,
+      withinFreeTier: !usedPaid,
+      tier: voiceName,
       at: new Date().toISOString()
     }
   ].slice(-40);
-  return { withinFreeTier, actualUsd };
+  return { withinFreeTier: !usedPaid, actualUsd };
+}
+
+function pcmBase64ToWavUrl(base64, mimeType = "") {
+  const bin = atob(base64);
+  const pcm = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) pcm[i] = bin.charCodeAt(i);
+  const rateMatch = /rate=(\d+)/i.exec(mimeType || "");
+  const sampleRate = rateMatch ? Number(rateMatch[1]) : 24000;
+
+  const buffer = new ArrayBuffer(44 + pcm.length);
+  const view = new DataView(buffer);
+  const writeStr = (off, s) => {
+    for (let i = 0; i < s.length; i += 1) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length, true);
+  new Uint8Array(buffer, 44).set(pcm);
+
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 }
 
 let activeAudio = null;
+let activeAudioUrl = null;
 
 export function stopTts() {
   if (activeAudio) {
     activeAudio.pause();
     activeAudio = null;
   }
-  if ("speechSynthesis" in window) {
+  if (activeAudioUrl) {
+    URL.revokeObjectURL(activeAudioUrl);
+    activeAudioUrl = null;
+  }
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
 }
@@ -159,69 +140,16 @@ export async function speakMessage({
   mode = "narrative",
   settings,
   usage,
+  apiKey = "",
+  paidApiKey = "",
+  isPaid = false,
+  onConfirmPaid = null,
   turnIndex = null,
   label = "",
-  voiceSpec = null,
-  onSwitchVoice = null
+  voiceSpec = null
 }) {
   stopTts();
-  let family = normalizeTtsFamily(settings.ttsVoice || "neural2");
-
-  if (family !== "browser") {
-    ensureTtsMonth(usage);
-    let est = estimateTtsCost(text, family, mode, true, voiceSpec);
-
-    if (
-      family === "neural2" &&
-      (usage.ttsMonthByTier.neural2 + est.chars) > est.tier.freeMonthlyChars &&
-      !usage.ttsNeural2Prompted
-    ) {
-      const switchToWavenet =
-        typeof window !== "undefined" &&
-        window.confirm(
-          "⚠ TTS Neural2 atingiu a franquia gratuita de 1.000.000 caracteres neste mês!\n\n" +
-          "Clique OK para trocar agora para WaveNet Automática (mais 4.000.000 chars grátis/mês).\n" +
-          "Clique Cancelar para decidir depois ou liberar Neural2 pago."
-        );
-      if (switchToWavenet) {
-        family = "wavenet";
-        usage.ttsNeural2Prompted = true;
-        est = estimateTtsCost(text, family, mode, true, voiceSpec);
-        if (onSwitchVoice) await onSwitchVoice(family);
-      } else {
-        const allowPaidNeural2 =
-          typeof window !== "undefined" &&
-          window.confirm(
-            "Deseja realmente continuar usando Neural2 PAGO (~US$ 16 por 1M chars) neste mês?\n\n" +
-            "Clique Cancelar para interromper a fala sem cobrança."
-          );
-        if (!allowPaidNeural2) {
-          throw new Error("Fala cancelada para evitar cobrança no Neural2 pago.");
-        }
-        usage.ttsNeural2Prompted = true;
-      }
-    }
-
-    if (
-      family === "wavenet" &&
-      (usage.ttsMonthByTier.wavenet + est.chars) > est.tier.freeMonthlyChars &&
-      !usage.ttsWavenetPrompted
-    ) {
-      const allowPaidWavenet =
-        typeof window !== "undefined" &&
-        window.confirm(
-          "⚠ TTS WaveNet atingiu a franquia gratuita de 4.000.000 caracteres neste mês!\n\n" +
-          "Clique OK para continuar usando WaveNet PAGO (~US$ 4 por 1M chars).\n" +
-          "Clique Cancelar para trocar para Voz Local Grátis (navegador)."
-        );
-      if (allowPaidWavenet) {
-        usage.ttsWavenetPrompted = true;
-      } else {
-        family = "browser";
-        if (onSwitchVoice) await onSwitchVoice("browser");
-      }
-    }
-  }
+  const family = normalizeTtsFamily(settings?.ttsVoice || "gemini-tts");
 
   if (family === "browser") {
     if (!("speechSynthesis" in window)) throw new Error("Este navegador não suporta síntese de voz local.");
@@ -231,33 +159,93 @@ export async function speakMessage({
     u.pitch = spec.gender.startsWith("F") ? 1.15 : spec.gender === "M2" ? 0.85 : 1.0;
     u.rate = parseFloat(spec.rate) || 1.0;
     window.speechSynthesis.speak(u);
-    return { chars: text.length, usd: 0, brlCents: 0, freeBrowser: true, withinFreeTier: true, tierKey: "browser" };
+    return { chars: String(text || "").length, usd: 0, brlCents: 0, freeBrowser: true, withinFreeTier: true, tierKey: "browser" };
   }
 
-  const key = (settings.ttsKey || settings.geminiPaidKey || "").trim();
-  if (!key) {
-    throw new Error("Configure a Google Cloud TTS Key (ou mude a voz para Navegador Local em ⚙ Configurações).");
+  const freeKey = (apiKey || settings?.geminiKey || "").trim();
+  const paidKey = (paidApiKey || settings?.geminiPaidKey || "").trim();
+  if (!freeKey && !paidKey) {
+    throw new Error("Configure sua Gemini API Key em ⚙ Configurações (ou mude para Navegador Local).");
   }
 
-  const est = estimateTtsCost(text, family, mode, true, voiceSpec);
-  const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      input: { ssml: est.ssml },
-      voice: { languageCode: "pt-BR", name: est.voiceName },
-      audioConfig: { audioEncoding: "MP3" }
-    })
-  });
+  const spec = resolveVoiceSpec(family, mode, voiceSpec);
+  const promptText = `Leia exatamente o texto abaixo em português do Brasil, com tom ${spec.tone} (sem adicionar nem remover palavras):\n\n${text}`;
+
+  const sendTts = async (key) => {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_TTS_MODEL)}:generateContent?key=${encodeURIComponent(key)}`;
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 35000) : null;
+    try {
+      return await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: promptText }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: spec.voiceName }
+              }
+            }
+          }
+        }),
+        ...(ctrl ? { signal: ctrl.signal } : {})
+      });
+    } catch (err) {
+      if (err?.name === "AbortError") throw new Error("Tempo limite (35s) no Gemini TTS. Tente novamente.");
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  let usedPaid = Boolean(isPaid && !freeKey);
+  const initialKey = usedPaid ? paidKey : (freeKey || paidKey);
+  usedPaid = initialKey === paidKey && initialKey !== freeKey;
+  let res = await sendTts(initialKey);
+
+  if (!res.ok && !usedPaid && paidKey && paidKey !== initialKey && [400, 403, 404, 429].includes(res.status)) {
+    const allowed = typeof onConfirmPaid === "function"
+      ? await onConfirmPaid({ model: GEMINI_TTS_MODEL, roleLabel: "TTS Gemini", status: res.status })
+      : false;
+    if (!allowed) {
+      throw new Error(`Cota gratuita de TTS Gemini atingida (${res.status}); Chave Paga não autorizada.`);
+    }
+    usedPaid = true;
+    res = await sendTts(paidKey);
+  }
+
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    throw new Error(`Erro Google TTS (${res.status}): ${errText.slice(0, 200)}`);
+    throw new Error(`Erro Gemini TTS (${res.status}): ${errText.slice(0, 220)}`);
   }
-  const data = await res.json();
-  if (!data?.audioContent) throw new Error("Google TTS não retornou áudio.");
 
-  const rec = recordTtsUsage(usage, { turnIndex, label, chars: est.chars, usd: est.usd, brlCents: est.brlCents, tierKey: est.voiceName });
-  activeAudio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+  const data = await res.json();
+  const inline = data?.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+  if (!inline?.data) {
+    throw new Error("Gemini TTS não retornou áudio.");
+  }
+
+  const tok = recordGeminiUsage(usage, data.usageMetadata, GEMINI_TTS_MODEL, usedPaid);
+  const chars = String(text || "").length;
+  const realUsd = tok.totalTokens
+    ? (tok.promptTokens * 0.5 + tok.outputTokens * 10.0) / 1e6
+    : estimateTtsCost(text, family, mode, false, voiceSpec).usd;
+  const brlCents = realUsd * USD_TO_BRL_REF * 100;
+
+  const rec = recordTtsUsage(usage, {
+    turnIndex,
+    label,
+    chars,
+    usd: realUsd,
+    brlCents,
+    voiceName: `${spec.voiceName} (${spec.gender})`,
+    usedPaid
+  });
+
+  activeAudioUrl = pcmBase64ToWavUrl(inline.data, inline.mimeType);
+  activeAudio = new Audio(activeAudioUrl);
   await activeAudio.play();
-  return { ...est, ...rec, tierKey: est.voiceName };
+  return { chars, usd: realUsd, brlCents, voiceName: spec.voiceName, ...rec };
 }
