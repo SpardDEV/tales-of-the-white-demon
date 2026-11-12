@@ -262,10 +262,10 @@ export function renderChatLog(game, transientMessages = [], handlers = {}) {
             </div>
           </div>`
         : "";
-      const ttsEst = estimateTtsCost(t.narrative, ttsVoice, t.mode, true);
+      const ttsEst = estimateTtsCost(t.narrative, ttsVoice, t.mode, true, t.voice);
       const ttsCostTxt = t.ttsPaid
         ? `Gasto: ${formatTtsCost(t.ttsPaid.usd, t.ttsPaid.brlCents, t.ttsPaid.chars)}`
-        : `Estima: ~${ttsEst.brlCents.toFixed(2)}¢ (${ttsEst.chars} ch)`;
+        : `Estima (${ttsEst.gender}): ~${ttsEst.brlCents.toFixed(2)}¢ (${ttsEst.chars} ch)`;
 
       html += `<div class="msg msg-ai ${m.cls}">
         <div class="msg-tag">${m.label}</div>

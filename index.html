@@ -201,7 +201,8 @@
           <label for="cfg-gemini-paid-key">⚡ Gemini API Key — Paga / Créditos (Narrador Épico · opcional)</label>
           <input id="cfg-gemini-paid-key" type="password" placeholder="AIza... (se vazia, o Narrador Épico usa a Free)" />
         </div>
-        <div class="btn-row" style="margin-bottom:10px;justify-content:flex-end;">
+        <div class="btn-row" style="margin-bottom:10px;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+          <button id="btn-save-keys" type="button" class="btn btn-ice btn-sm">✓ Salvar Keys</button>
           <button id="btn-fetch-models" type="button" class="btn btn-ghost btn-sm">↻ Atualizar modelos da minha API</button>
         </div>
         <div class="form-row">
@@ -259,11 +260,10 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label for="cfg-tts-voice">🔊 Voz TTS (SSML pitch em chefes/falas)</label>
+            <label for="cfg-tts-voice">🔊 Qualidade TTS (IA alterna voz M/F + pitch)</label>
             <select id="cfg-tts-voice">
-              <option value="pt-BR-Neural2-B">Neural2 Masculina (1M/mês grátis · $16/1M)</option>
-              <option value="pt-BR-Neural2-A">Neural2 Feminina (1M/mês grátis · $16/1M)</option>
-              <option value="pt-BR-Wavenet-B">WaveNet Masculina (4M/mês grátis · $4/1M)</option>
+              <option value="neural2">Neural2 Automática (IA alterna M/F · 1M/mês grátis)</option>
+              <option value="wavenet">WaveNet Automática (IA alterna M/F · 4M/mês grátis)</option>
               <option value="browser">Navegador Local (R$ 0 · offline)</option>
             </select>
           </div>

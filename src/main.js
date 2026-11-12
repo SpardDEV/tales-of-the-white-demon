@@ -32,7 +32,7 @@ import {
 import { SphereGlobe } from "./globe.js";
 import { buildChatGptPrompt, compressImageToWebP9x16 } from "./media.js";
 import { DEFAULT_ART_STYLE, estimateCostUsd } from "./config.js";
-import { speakMessage, stopTts } from "./tts.js";
+import { normalizeTtsFamily, speakMessage, stopTts } from "./tts.js";
 import {
   indexMemoryInBackground,
   reindexAllMemoryVectors,
@@ -184,7 +184,7 @@ async function attachMediaToId(mediaId, file) {
 }
 
 const uiHandlers = {
-  getTtsVoice: () => settings.ttsVoice || "pt-BR-Neural2-B",
+  getTtsVoice: () => normalizeTtsFamily(settings.ttsVoice || "neural2"),
   onSpeakTurn: async (turnIdx, btnEl) => {
     const turn = game.activeChapter.turns[turnIdx];
     if (!turn?.narrative) return;
@@ -205,6 +205,7 @@ const uiHandlers = {
         usage: game.usage,
         turnIndex: turn.turn || turnIdx + 1,
         label: turn.mode || "narrative",
+        voiceSpec: turn.voice || null,
         onSwitchVoice: async (nextVoice) => {
           settings.ttsVoice = nextVoice;
           saveSettings(settings);
@@ -679,6 +680,7 @@ async function sendTurn(rawInput, negotiationAction = null, focusTarget = null) 
       mode: parsed.mode || cmd.mode,
       user: rawInput === "__START_PROLOGUE__" ? "" : rawInput,
       narrative: parsed.narrative || "(Sem resposta narrativa)",
+      voice: parsed.voice || null,
       scenePrompt: parsed.scenePrompt || null,
       sceneMediaId: null
     });
@@ -756,7 +758,7 @@ function fillSettingsModalFields() {
   document.getElementById("cfg-budget").value = settings.monthlyBudgetUsd ?? 5;
   const epManual = document.getElementById("cfg-epic-manual");
   if (epManual) epManual.checked = settings.epicManualOnly === true;
-  setSelectValue("cfg-tts-voice", settings.ttsVoice || "pt-BR-Neural2-B");
+  setSelectValue("cfg-tts-voice", normalizeTtsFamily(settings.ttsVoice || "neural2"));
   const ttsKeyEl = document.getElementById("cfg-tts-key");
   if (ttsKeyEl) ttsKeyEl.value = settings.ttsKey || "";
   document.getElementById("cfg-gemini-rpd").value = settings.geminiRpdLimit || 250;
@@ -838,7 +840,12 @@ function bindUI() {
       settings = { ...settings, supabaseUrl: sb.supabaseUrl, supabaseAnonKey: sb.supabaseAnonKey };
       const remoteCfg = await pullUserSettingsFromSupabase(settings).catch(() => null);
       if (remoteCfg && typeof remoteCfg === "object") {
-        settings = { ...settings, ...remoteCfg };
+        const merged = { ...settings, ...remoteCfg };
+        // Não sobrescreve key digitada localmente se a nuvem estiver vazia
+        for (const k of ["geminiKey", "geminiPaidKey", "ttsKey"]) {
+          if (!remoteCfg[k] && settings[k]) merged[k] = settings[k];
+        }
+        settings = merged;
         fillSettingsModalFields();
       }
       saveSettings(settings);
@@ -1014,17 +1021,12 @@ function bindUI() {
       btnEl.disabled = false;
     }
   });
-  document.getElementById("quota-strip").addEventListener("click", openSettingsModal);
-  document.getElementById("btn-close-settings").addEventListener("click", () => {
-    document.getElementById("settings-modal").classList.add("hidden");
-  });
-
-  document.getElementById("btn-save-settings").addEventListener("click", async () => {
+  const syncSettingsFromModal = ({ pushCloud = false } = {}) => {
     settings = {
       ...settings,
       geminiKey: document.getElementById("cfg-gemini-key").value.trim(),
       geminiPaidKey: document.getElementById("cfg-gemini-paid-key").value.trim(),
-      ttsVoice: document.getElementById("cfg-tts-voice")?.value || "pt-BR-Neural2-B",
+      ttsVoice: normalizeTtsFamily(document.getElementById("cfg-tts-voice")?.value || "neural2"),
       ttsKey: document.getElementById("cfg-tts-key")?.value.trim() || "",
       geminiModel: document.getElementById("cfg-gemini-model").value,
       geminiEpicModel: document.getElementById("cfg-gemini-epic").value,
@@ -1039,10 +1041,41 @@ function bindUI() {
       artStylePrompt: document.getElementById("cfg-art-style").value.trim() || DEFAULT_ART_STYLE
     };
     saveSettings(settings);
-    pushUserSettingsToSupabase(settings).catch((err) => console.warn("Config não enviada à nuvem:", err));
-    document.getElementById("settings-modal").classList.add("hidden");
     renderHeaderAndQuotas(game, settings);
     setSyncBadge(isSupabaseConfigured(settings) ? "Pronto" : "Local", "badge-muted");
+    if (pushCloud) {
+      pushUserSettingsToSupabase(settings).catch((err) => console.warn("Config não enviada à nuvem:", err));
+    }
+  };
+
+  document.getElementById("settings-modal")?.addEventListener("input", (e) => {
+    if (e.target?.id?.startsWith("cfg-") && e.target.id !== "cfg-sb-email" && e.target.id !== "cfg-sb-pass") {
+      syncSettingsFromModal();
+    }
+  });
+  document.getElementById("settings-modal")?.addEventListener("change", (e) => {
+    if (e.target?.id?.startsWith("cfg-") && e.target.id !== "cfg-sb-email" && e.target.id !== "cfg-sb-pass") {
+      syncSettingsFromModal();
+    }
+  });
+
+  document.getElementById("btn-save-keys")?.addEventListener("click", (e) => {
+    syncSettingsFromModal({ pushCloud: true });
+    const btnEl = e.currentTarget;
+    const prev = btnEl.textContent;
+    btnEl.textContent = "✓ Keys salvas!";
+    setTimeout(() => { btnEl.textContent = prev; }, 1800);
+  });
+
+  document.getElementById("quota-strip").addEventListener("click", openSettingsModal);
+  document.getElementById("btn-close-settings").addEventListener("click", () => {
+    syncSettingsFromModal();
+    document.getElementById("settings-modal").classList.add("hidden");
+  });
+
+  document.getElementById("btn-save-settings").addEventListener("click", async () => {
+    syncSettingsFromModal({ pushCloud: true });
+    document.getElementById("settings-modal").classList.add("hidden");
 
     if (
       freeGeminiKey() &&
@@ -1113,6 +1146,7 @@ function bindUI() {
   });
 
   document.getElementById("btn-test-game").addEventListener("click", async () => {
+    syncSettingsFromModal({ pushCloud: true });
     if (!confirm("Modo Teste: substitui o jogo local por uma masmorra de teste (não vai para a nuvem). Continuar?")) return;
     await clearAllLocal();
     game = createTestGameData();
@@ -1124,6 +1158,7 @@ function bindUI() {
     if (freeGeminiKey()) await sendTurn("Acordo zonzo no chão frio da masmorra. O que vejo ao meu redor?");
   });
   document.getElementById("btn-new-game").addEventListener("click", async () => {
+    syncSettingsFromModal({ pushCloud: true });
     if (!confirm("Isso apagará o progresso local atual e iniciará uma nova jornada do Prólogo. Continuar?")) {
       return;
     }

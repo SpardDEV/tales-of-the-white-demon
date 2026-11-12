@@ -8,3 +8,5 @@ ASSETS/*.zip
 ASSETS/*.7z
 ASSETS/_raw_extracted/
 graphify-out/
+secrets.local.js
+src/secrets.local.js

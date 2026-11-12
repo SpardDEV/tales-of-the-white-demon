@@ -11,17 +11,22 @@ const SETTINGS_KEY = "twd_local_settings_v1";
 const MEM_FALLBACK = { kv: new Map(), chapters: new Map(), media: new Map() };
 
 export function loadSettings() {
+  const apkSecrets =
+    typeof globalThis !== "undefined" && globalThis.__TWD_APK_SECRETS__ && typeof globalThis.__TWD_APK_SECRETS__ === "object"
+      ? globalThis.__TWD_APK_SECRETS__
+      : {};
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const saved = raw ? JSON.parse(raw) : {};
     return {
       ...DEFAULT_SETTINGS,
+      ...apkSecrets,
       ...saved,
-      supabaseUrl: saved.supabaseUrl || DEFAULT_SETTINGS.supabaseUrl,
-      supabaseAnonKey: saved.supabaseAnonKey || DEFAULT_SETTINGS.supabaseAnonKey
+      supabaseUrl: saved.supabaseUrl || apkSecrets.supabaseUrl || DEFAULT_SETTINGS.supabaseUrl,
+      supabaseAnonKey: saved.supabaseAnonKey || apkSecrets.supabaseAnonKey || DEFAULT_SETTINGS.supabaseAnonKey
     };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, ...apkSecrets };
   }
 }
 

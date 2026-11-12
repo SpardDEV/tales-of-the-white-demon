@@ -243,6 +243,7 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
   "musica": null,
   "haptico": null,
   "qte_fisico": null,
+  "voice": null,
   "epico": false,
   "combatLog": null,
   "negotiation": {
@@ -290,7 +291,8 @@ FORMATO DE SAÍDA OBRIGATÓRIO — APENAS JSON VÁLIDO:
     "suggestedTitle": null
   }
 }
-NOTA COMPÊNDIO (grafo de memória): ao criar/atualizar itens em compendiumUpdates, inclua quando útil "tags": [] e "links": ["Nome_Local_ou_NPC_relacionado"] para conectar o mundo.`;
+NOTA COMPÊNDIO (grafo de memória): ao criar/atualizar itens em compendiumUpdates, inclua quando útil "tags": [] e "links": ["Nome_Local_ou_NPC_relacionado"] para conectar o mundo.
+NOTA VOZ TTS ("voice"): opcional {"gender":"M|F|M2|F2","pitch":"-2st..+3st","rate":"0.92..1.08"} quando falar Deusa/NPC feminina ("F"/"F2"), criatura grave ("M2", "-3st") ou narrador tenso; senão deixe null.`;
 }
 
 export function buildChapterSummaryPrompt(chapter) {
